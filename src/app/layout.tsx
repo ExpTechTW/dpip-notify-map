@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "災害通知發送紀錄",
-  description: "災害通知發送紀錄與地圖視覺化系統",
+  title: "DPIP 通知發送紀錄",
+  description: "DPIP 通知發送紀錄與地圖視覺化系統",
 };
 
 export default function RootLayout({
