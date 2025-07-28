@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { NotificationRecord } from '@/types/notify';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -17,18 +18,48 @@ export default function NotificationList({
   selectedNotification,
   onSelectNotification,
 }: NotificationListProps) {
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const selectedItemRef = useRef<HTMLDivElement>(null);
+
+  // 當選中的通知改變時，滾動到該位置
+  useEffect(() => {
+    if (selectedNotification && selectedItemRef.current && scrollAreaRef.current) {
+      const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (scrollContainer) {
+        const itemElement = selectedItemRef.current;
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const itemRect = itemElement.getBoundingClientRect();
+        
+        // 計算需要滾動的距離
+        const scrollTop = scrollContainer.scrollTop;
+        const itemTop = itemRect.top - containerRect.top + scrollTop;
+        const itemBottom = itemTop + itemRect.height;
+        const containerHeight = containerRect.height;
+        
+        // 如果項目不在可視範圍內，滾動到該位置
+        if (itemTop < scrollTop || itemBottom > scrollTop + containerHeight) {
+          scrollContainer.scrollTo({
+            top: itemTop - containerHeight / 2 + itemRect.height / 2,
+            behavior: 'smooth'
+          });
+        }
+      }
+    }
+  }, [selectedNotification]);
+
   return (
     <div className="h-full flex flex-col bg-background">
       {/* 通知列表 */}
       <div className="flex-1 overflow-hidden">
-        <ScrollArea className="h-full">
+        <ScrollArea ref={scrollAreaRef} className="h-full">
           <div className="p-4 space-y-3">
             {notifications.map((notification, index) => (
             <Card
               key={`${notification.timestamp}-${index}`}
+              ref={selectedNotification?.timestamp === notification.timestamp ? selectedItemRef : null}
               className={`relative cursor-pointer transition-all duration-200 ${
                 selectedNotification?.timestamp === notification.timestamp
-                  ? 'border-primary bg-primary/5'
+                  ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
                   : 'hover:bg-accent/50'
               }`}
               onClick={() => onSelectNotification(notification)}
