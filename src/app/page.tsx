@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import NotificationList from '@/components/NotificationList';
 import PhonePreview from '@/components/PhonePreview';
 import MapView from '@/components/MapView';
@@ -11,9 +12,48 @@ import { Card } from '@/components/ui/card';
 import { RefreshCcw, AlertTriangle, Loader2, Shield } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 
-export default function Home() {
+function HomeContent() {
   const { notifications, loading, error, refetch } = useNotifications();
   const [selectedNotification, setSelectedNotification] = useState<NotificationRecord | null>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  
+  // 從 URL 參數讀取 timestamp
+  useEffect(() => {
+    if (notifications.length > 0) {
+      const timestampParam = searchParams.get('t');
+      if (timestampParam) {
+        // 將參數轉換為數字進行比較
+        const timestampNumber = parseInt(timestampParam, 10);
+        // 找到對應的通知（timestamp 可能是數字或字串）
+        const notification = notifications.find(n => {
+          const notificationTimestamp = typeof n.timestamp === 'string' 
+            ? parseInt(n.timestamp, 10) 
+            : n.timestamp;
+          return notificationTimestamp === timestampNumber;
+        });
+        
+        if (notification) {
+          setSelectedNotification(notification);
+        } else {
+          // 如果找不到，選擇第一個通知
+          setSelectedNotification(notifications[0]);
+        }
+      } else {
+        // 沒有參數時，選擇第一個通知
+        setSelectedNotification(notifications[0]);
+      }
+    }
+  }, [notifications, searchParams]);
+  
+  // 更新 URL 當選擇不同通知
+  const handleSelectNotification = (notification: NotificationRecord) => {
+    setSelectedNotification(notification);
+    // 更新 URL 參數（統一使用字串格式）
+    const params = new URLSearchParams(searchParams);
+    params.set('t', notification.timestamp.toString());
+    router.push(`?${params.toString()}`, { scroll: false });
+  };
 
   if (loading) {
     return (
@@ -72,7 +112,7 @@ export default function Home() {
             <NotificationList
               notifications={notifications}
               selectedNotification={selectedNotification}
-              onSelectNotification={setSelectedNotification}
+              onSelectNotification={handleSelectNotification}
             />
           </Card>
           <Card className="w-[450px] bg-gradient-to-b from-muted/20 to-muted/40 flex-shrink-0 overflow-hidden">
@@ -89,7 +129,7 @@ export default function Home() {
             <NotificationList
               notifications={notifications}
               selectedNotification={selectedNotification}
-              onSelectNotification={setSelectedNotification}
+              onSelectNotification={handleSelectNotification}
             />
           </Card>
           <div className="flex-1 flex flex-col min-w-0 gap-3">
@@ -108,7 +148,7 @@ export default function Home() {
             <NotificationList
               notifications={notifications}
               selectedNotification={selectedNotification}
-              onSelectNotification={setSelectedNotification}
+              onSelectNotification={handleSelectNotification}
             />
           </Card>
           <div className="flex-1 flex min-h-0 gap-3">
@@ -121,23 +161,36 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 手機版佈局 (< 768px) */}
+        {/* 手機版佈局 (< 768px) - 隱藏 iPhone 預覽 */}
         <div className="flex md:hidden flex-1 flex-col min-h-0 gap-2">
-          <Card className="h-1/3 flex-shrink-0 min-h-0 overflow-hidden">
+          <Card className="h-[35%] flex-shrink-0 min-h-0 overflow-hidden">
             <NotificationList
               notifications={notifications}
               selectedNotification={selectedNotification}
-              onSelectNotification={setSelectedNotification}
+              onSelectNotification={handleSelectNotification}
             />
           </Card>
-          <Card className="h-1/3 bg-gradient-to-b from-muted/20 to-muted/40 flex-shrink-0 overflow-hidden">
-            <PhonePreview notification={selectedNotification} />
-          </Card>
-          <Card className="flex-1 min-h-0 overflow-hidden">
+          <Card className="flex-1 min-h-0 overflow-hidden rounded-none -mx-2 -mb-2">
             <MapView notification={selectedNotification} />
           </Card>
         </div>
       </div>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center space-y-4 text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-muted-foreground" />
+          <h2 className="text-xl font-semibold">載入中...</h2>
+          <p className="text-sm text-muted-foreground">正在獲取通知資料</p>
+        </div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }

@@ -4,6 +4,7 @@ import { NotificationRecord } from '@/types/notify';
 import { useState, useEffect } from 'react';
 import { Wifi, Battery, Signal, Camera, Flashlight } from 'lucide-react';
 import { getTimeAgo } from '@/lib/time-utils';
+import Image from 'next/image';
 
 interface PhonePreviewProps {
   notification: NotificationRecord | null;
@@ -29,15 +30,15 @@ export default function PhonePreview({ notification }: PhonePreviewProps) {
   `;
 
   return (
-    <div className="flex items-center justify-center p-4 sm:p-6 lg:p-8 h-full">
-      <div className="relative transform hover:scale-[1.02] transition-transform duration-300">
+    <div className="flex items-center justify-center h-full">
+      <div className="relative transform hover:scale-[1.05] transition-transform duration-300">
         {/* iPhone 14 Pro 外殼 */}
         <div className="relative">
           {/* 外殼陰影 */}
           <div className="absolute inset-0 bg-black rounded-[2rem] sm:rounded-[3rem] lg:rounded-[3.5rem] blur opacity-20 translate-y-2 sm:translate-y-4"></div>
           
-          {/* 主體外殼 - 響應式尺寸 */}
-          <div className="relative w-[200px] h-[420px] sm:w-[240px] sm:h-[500px] md:w-[280px] md:h-[600px] lg:w-[320px] lg:h-[690px] bg-gradient-to-br from-gray-700 via-gray-800 to-gray-900 rounded-[1.5rem] sm:rounded-[2rem] md:rounded-[2.5rem] lg:rounded-[3rem] p-[2px] sm:p-[3px] shadow-2xl">
+          {/* 主體外殼 - 響應式尺寸（增大） */}
+          <div className="relative w-[220px] h-[460px] sm:w-[260px] sm:h-[540px] md:w-[300px] md:h-[640px] lg:w-[340px] lg:h-[730px] xl:w-[380px] xl:h-[810px] bg-gradient-to-br from-gray-700 via-gray-800 to-gray-900 rounded-[1.5rem] sm:rounded-[2rem] md:rounded-[2.5rem] lg:rounded-[3rem] p-[2px] sm:p-[3px] shadow-2xl">
             
             {/* 側邊按鈕 - 響應式 */}
             <div className="absolute -left-[1px] sm:-left-[2px] top-[110px] sm:top-[130px] md:top-[190px] w-[2px] sm:w-[3px] h-[40px] sm:h-[50px] md:h-[80px] bg-gray-600 rounded-l-full"></div>
@@ -91,30 +92,35 @@ export default function PhonePreview({ notification }: PhonePreviewProps) {
 
                   {/* 通知區域 - 只在有通知時顯示，響應式 */}
                   {notification && (
-                    <div className="absolute top-[160px] sm:top-[200px] md:top-[260px] lg:top-[320px] left-3 right-3 sm:left-4 sm:right-4 md:left-5 md:right-5 z-20">
-                      <div className="bg-white/95 backdrop-blur-xl rounded-2xl p-3 sm:p-4 shadow-2xl">
-                        <div className="flex items-start space-x-3">
+                    <div className="absolute top-[160px] sm:top-[200px] md:top-[260px] lg:top-[320px] xl:top-[360px] left-3 right-3 sm:left-4 sm:right-4 md:left-5 md:right-5 z-20">
+                      <div className="bg-white/95 dark:bg-black/90 backdrop-blur-xl rounded-2xl p-3 sm:p-4 shadow-2xl">
+                        <div className="flex items-center space-x-3">
                           {/* 應用程式圖標 - Apple HIG 20pt 規範 */}
-                          <div className="flex-shrink-0 self-start mt-0.5">
-                            <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-sm">
-                              <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                              </svg>
-                            </div>
+                          <div className="flex-shrink-0 relative w-8 h-8 sm:w-10 sm:h-10">
+                            <Image 
+                              src="https://raw.githubusercontent.com/ExpTechTW/DPIP/refs/heads/main/assets/DPIP.png" 
+                              alt="DPIP Logo" 
+                              fill
+                              className="rounded-md object-cover"
+                              sizes="(max-width: 640px) 32px, 40px"
+                            />
                           </div>
-                          
                           {/* 通知內容 - 響應式 */}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between mb-1">
-                              <div className="text-gray-900 text-xs sm:text-sm font-semibold line-clamp-2 flex-1 pr-2">
+                            <div className="flex items-start justify-between mb-1.5">
+                              <div className="text-gray-900 dark:text-gray-100 text-xs sm:text-sm font-semibold line-clamp-2 flex-1 pr-2">
                                 {notification.title}
                               </div>
-                              <div className="text-gray-500 text-xs font-medium flex-shrink-0">
+                              <div className="text-gray-500 dark:text-gray-400 text-[10px] sm:text-xs font-medium flex-shrink-0">
                                 {getTimeAgo(notification.timestamp)}
                               </div>
                             </div>
-                            <div className="text-gray-700 text-xs sm:text-sm line-clamp-2 leading-relaxed">
-                              {notification.body}
+                            <div className="text-gray-700 dark:text-gray-300 text-[11px] sm:text-xs leading-relaxed max-h-[60px] sm:max-h-[80px] overflow-hidden">
+                              {notification.body.split('\n').map((line, index) => (
+                                <div key={index} className={index > 0 ? 'mt-1' : ''}>
+                                  {line}
+                                </div>
+                              ))}
                             </div>
                           </div>
                         </div>

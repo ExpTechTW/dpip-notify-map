@@ -1,8 +1,8 @@
 export interface NotificationRecord {
-  timestamp: string;
+  timestamp: number;
   title: string;
   body: string;
-  codes: string[];
+  codes: number[];
   Polygons: (Polygon | GeoJSONFeature)[];
   critical: boolean;
 }
