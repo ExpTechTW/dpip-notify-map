@@ -29,6 +29,10 @@ export default function MapView({ notification }: MapViewProps) {
             tileSize: 256,
             attribution: '© OpenStreetMap contributors',
           },
+          map: {
+            type: 'vector',
+            url: 'https://lb.exptech.dev/api/v1/map/tiles/tiles.json',
+          },
         },
         layers: [
           {
@@ -36,6 +40,13 @@ export default function MapView({ notification }: MapViewProps) {
             type: 'raster',
             source: 'osm-tiles',
           },
+          {
+            'id': 'county-outline',
+            'type': 'line',
+            'source': 'map',
+            'source-layer': 'city',
+            'paint': { 'line-color': '#a9b4bc' },
+          }
         ],
       },
       center: [120.9605, 23.6978], // 台灣中心
@@ -44,13 +55,30 @@ export default function MapView({ notification }: MapViewProps) {
 
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
 
+    // Add debugging: Log vector tile properties when map loads
+    map.current.on('load', () => {
+      console.log('Map loaded, checking vector tile properties...');
+      
+      // Add click handler to inspect features
+      map.current!.on('click', (e) => {
+        const features = map.current!.queryRenderedFeatures(e.point, {
+          layers: ['county-outline']
+        });
+        
+        if (features.length > 0) {
+          console.log('Vector tile feature properties:', features[0].properties);
+          console.log('Available property keys:', Object.keys(features[0].properties || {}));
+        }
+      });
+    });
+
     return () => {
       map.current?.remove();
     };
   }, []);
 
   useEffect(() => {
-    if (!map.current || !notification?.Polygons?.length) return;
+    if (!map.current || !notification) return;
 
     // 清除之前的多邊形
     if (map.current.getSource('notification-polygons')) {
@@ -58,6 +86,86 @@ export default function MapView({ notification }: MapViewProps) {
       map.current.removeLayer('notification-polygons-line');
       map.current.removeSource('notification-polygons');
     }
+
+    // 清除之前的 codes 顯示
+    if (map.current.getSource('notification-codes')) {
+      map.current.removeLayer('notification-codes-fill');
+      map.current.removeLayer('notification-codes-line');
+      map.current.removeSource('notification-codes');
+    }
+
+    // 處理 codes 顯示（藍色行政區域）
+    if (notification.codes && notification.codes.length > 0) {
+      console.log('Processing notification codes:', notification.codes);
+      console.log('Codes types:', notification.codes.map(c => typeof c));
+      
+      // Try the original filter with string conversion as backup
+      const codesAsStrings = notification.codes.map(c => String(c));
+      
+      try {
+        // First try with string codes since they might be stored as strings in the tiles
+        map.current.addLayer({
+          id: 'notification-codes-fill',
+          type: 'fill',
+          source: 'map',
+          'source-layer': 'city',
+          filter: ['in', ['get', 'CODE'], ['literal', codesAsStrings]] as any,
+          paint: {
+            'fill-color': '#3b82f6',
+            'fill-opacity': 0.3,
+          },
+        });
+
+        map.current.addLayer({
+          id: 'notification-codes-line',
+          type: 'line',
+          source: 'map',
+          'source-layer': 'city',
+          filter: ['in', ['get', 'CODE'], ['literal', codesAsStrings]] as any,
+          paint: {
+            'line-color': '#2563eb',
+            'line-width': 2,
+          },
+        });
+        
+        console.log('Added codes layers with string codes');
+      } catch (error) {
+        console.error('Error adding codes layers with string codes:', error);
+        
+        // Fallback to original numeric codes
+        try {
+          map.current.addLayer({
+            id: 'notification-codes-fill',
+            type: 'fill',
+            source: 'map',
+            'source-layer': 'city',
+            filter: ['in', ['get', 'CODE'], ['literal', notification.codes]] as any,
+            paint: {
+              'fill-color': '#3b82f6',
+              'fill-opacity': 0.3,
+            },
+          });
+
+          map.current.addLayer({
+            id: 'notification-codes-line',
+            type: 'line',
+            source: 'map',
+            'source-layer': 'city',
+            filter: ['in', ['get', 'CODE'], ['literal', notification.codes]] as any,
+            paint: {
+              'line-color': '#2563eb',
+              'line-width': 2,
+            },
+          });
+          
+          console.log('Added codes layers with numeric codes');
+        } catch (fallbackError) {
+          console.error('Error adding codes layers with numeric codes:', fallbackError);
+        }
+      }
+    }
+
+    if (!notification?.Polygons?.length) return;
 
     // 處理不同的資料格式
     const features = notification.Polygons.filter(polygon => {
@@ -195,6 +303,18 @@ export default function MapView({ notification }: MapViewProps) {
     return () => {
       if (map.current) {
         map.current.off('click', 'notification-polygons-fill', clickHandler);
+        
+        // 清除 codes 圖層
+        try {
+          if (map.current.getLayer('notification-codes-fill')) {
+            map.current.removeLayer('notification-codes-fill');
+          }
+          if (map.current.getLayer('notification-codes-line')) {
+            map.current.removeLayer('notification-codes-line');
+          }
+        } catch {
+          // 忽略移除圖層時的錯誤
+        }
       }
     };
   }, [notification]);
