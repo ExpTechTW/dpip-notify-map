@@ -25,13 +25,8 @@ function HomeContent() {
       if (timestampParam) {
         // 將參數轉換為數字進行比較
         const timestampNumber = parseInt(timestampParam, 10);
-        // 找到對應的通知（timestamp 可能是數字或字串）
-        const notification = notifications.find(n => {
-          const notificationTimestamp = typeof n.timestamp === 'string' 
-            ? parseInt(n.timestamp, 10) 
-            : n.timestamp;
-          return notificationTimestamp === timestampNumber;
-        });
+        // 找到對應的通知
+        const notification = notifications.find(n => n.timestamp === timestampNumber);
         
         if (notification) {
           setSelectedNotification(notification);
