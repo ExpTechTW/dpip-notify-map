@@ -81,8 +81,8 @@ export default function MapView({ notification }: MapViewProps) {
       console.log('Map style loaded');
     });
 
-    map.current.on('error', (error) => {
-      console.error('Map error:', error);
+    map.current.on('error', () => {
+      void 0
     });
 
     return () => {
