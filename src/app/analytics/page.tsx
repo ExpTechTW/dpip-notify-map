@@ -24,7 +24,7 @@ interface RegionStructure {
   };
 }
 
-type TimeFilter = 'recent24h' | 'timeSlot';
+type TimeFilter = 'recent24h' | 'timeSlot' | 'all';
 type ViewMode = 'city' | 'district';
 
 interface NotifyHistoryResponse {
@@ -47,14 +47,6 @@ interface AnalyticsData {
   typeDistribution: { [type: string]: number };
 }
 
-// 簡化的多邊形中心點檢測
-function checkPolygonTownOverlap(notificationCoords: number[][][], townCoords: number[][][]): boolean {
-  // 取得通知多邊形的中心點
-  const notificationCenter = getPolygonCenter(notificationCoords);
-  
-  // 檢查中心點是否在鄉鎮多邊形內
-  return isPointInPolygon(notificationCenter, townCoords);
-}
 
 // 計算多邊形中心點（質心）
 function getPolygonCenter(coordinates: number[][][]): [number, number] {
@@ -235,8 +227,10 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('recent24h');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [regionData, setRegionData] = useState<RegionStructure | null>(null);
-  const [townData, setTownData] = useState<any>(null);
+  const [townData, setTownData] = useState<Record<string, unknown> | null>(null);
   const [gridMatrix, setGridMatrix] = useState<Map<string, number> | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('city');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
@@ -246,13 +240,19 @@ export default function AnalyticsPage() {
   const router = useRouter();
   
   // 更新URL參數的函數
-  const updateURL = (updates: { timeFilter?: string | null; limit?: string | null }) => {
+  const updateURL = (updates: { timeFilter?: string | null; limit?: string | null; startDate?: string; endDate?: string }) => {
     const params = new URLSearchParams(window.location.search);
     
     if (updates.timeFilter === null) {
       params.delete('timeFilter');
+      params.delete('startDate');
+      params.delete('endDate');
     } else if (updates.timeFilter) {
       params.set('timeFilter', updates.timeFilter);
+      if (updates.timeFilter === 'timeSlot' && startDate && endDate) {
+        params.set('startDate', startDate);
+        params.set('endDate', endDate);
+      }
     }
     
     if (updates.limit === null) {
@@ -270,6 +270,8 @@ export default function AnalyticsPage() {
       const urlParams = new URLSearchParams(window.location.search);
       const limitParam = urlParams.get('limit');
       const timeFilterParam = urlParams.get('timeFilter');
+      const startDateParam = urlParams.get('startDate');
+      const endDateParam = urlParams.get('endDate');
       
       if (limitParam) {
         const limitValue = limitParam === 'all' ? 'all' : parseInt(limitParam, 10);
@@ -280,6 +282,10 @@ export default function AnalyticsPage() {
       
       if (timeFilterParam === 'timeSlot') {
         setTimeFilter('timeSlot');
+        if (startDateParam) setStartDate(startDateParam);
+        if (endDateParam) setEndDate(endDateParam);
+      } else if (timeFilterParam === 'all') {
+        setTimeFilter('all');
       }
     }
   }, [limitSetting, setLimitSetting]);
@@ -344,10 +350,14 @@ export default function AnalyticsPage() {
       const now = Date.now();
       const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
       filtered = filtered.filter(n => n.timestamp >= twentyFourHoursAgo);
+    } else if (timeFilter === 'timeSlot' && startDate && endDate) {
+      const startTime = new Date(startDate).getTime();
+      const endTime = new Date(endDate + 'T23:59:59').getTime(); // 包含結束日期的整天
+      filtered = filtered.filter(n => n.timestamp >= startTime && n.timestamp <= endTime);
     }
     
     return filtered;
-  }, [notifications, timeFilter]);
+  }, [notifications, timeFilter, startDate, endDate]);
 
   const analyticsData = useMemo((): AnalyticsData => {
     if (!regionData || !townData || !gridMatrix || !filteredNotifications.length) {
@@ -707,27 +717,66 @@ export default function AnalyticsPage() {
             </Button>
           </div>
           
-          <div className="flex gap-1 bg-muted rounded-lg p-1">
-            <Button
-              variant={timeFilter === 'recent24h' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => {
-                setTimeFilter('recent24h');
-                updateURL({ timeFilter: null });
-              }}
-            >
-              近 24 小時
-            </Button>
-            <Button
-              variant={timeFilter === 'timeSlot' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => {
-                setTimeFilter('timeSlot');
-                updateURL({ timeFilter: 'timeSlot' });
-              }}
-            >
-              日期區間
-            </Button>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1 bg-muted rounded-lg p-1">
+              <Button
+                variant={timeFilter === 'recent24h' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => {
+                  setTimeFilter('recent24h');
+                  updateURL({ timeFilter: null });
+                }}
+              >
+                近 24 小時
+              </Button>
+              <Button
+                variant={timeFilter === 'timeSlot' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setTimeFilter('timeSlot')}
+              >
+                指定區間
+              </Button>
+              <Button
+                variant={timeFilter === 'all' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => {
+                  setTimeFilter('all');
+                  updateURL({ timeFilter: 'all' });
+                }}
+              >
+                全部區間
+              </Button>
+            </div>
+            
+            {timeFilter === 'timeSlot' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="text-xs border rounded px-2 py-1 bg-background"
+                />
+                <span className="text-xs text-muted-foreground">至</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="text-xs border rounded px-2 py-1 bg-background"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (startDate && endDate) {
+                      updateURL({ timeFilter: 'timeSlot' });
+                    }
+                  }}
+                  disabled={!startDate || !endDate}
+                >
+                  套用
+                </Button>
+              </div>
+            )}
           </div>
           
           <div className="flex gap-1 bg-muted rounded-lg p-1">
@@ -1047,6 +1096,21 @@ export default function AnalyticsPage() {
                 {/* 選中時顯示詳細類型分布 */}
                 {isSelected && viewMode === 'district' && (
                   <div className="mt-4 pt-4 border-t">
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                      <div className="text-center">
+                        <div className="text-lg font-bold text-red-500">
+                          {region.criticalCount}
+                        </div>
+                        <div className="text-xs text-muted-foreground">緊急通知</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-lg font-bold">
+                          {region.count > 0 ? Math.round((region.criticalCount / region.count) * 100) : 0}%
+                        </div>
+                        <div className="text-xs text-muted-foreground">緊急比例</div>
+                      </div>
+                    </div>
+                    
                     <h4 className="font-medium mb-3">通知類型分布</h4>
                     <div className="space-y-2">
                       {Object.entries(region.types)
