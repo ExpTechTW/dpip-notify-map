@@ -64,7 +64,7 @@ function getPolygonCenter(coordinates: number[][][]): [number, number] {
 // 載入預計算的矩陣網格
 async function loadGridMatrix(): Promise<Map<string, number>> {
   try {
-    const response = await fetch('/grid-matrix.json');
+    const response = await fetch('https://raw.githubusercontent.com/ExpTechTW/dpip-notify-map/refs/heads/main/public/grid-matrix.json');
     const gridData = await response.json();
     const gridMatrix = new Map<string, number>();
     
@@ -327,7 +327,7 @@ export default function AnalyticsPage() {
   // 獲取地區數據
   useEffect(() => {
     Promise.all([
-      fetch('/region.json').then(res => res.json()),
+      fetch('https://raw.githubusercontent.com/ExpTechTW/dpip-notify-map/refs/heads/main/public/region.json').then(res => res.json()),
       loadGridMatrix()
     ])
       .then(([regionData, gridMatrix]) => {

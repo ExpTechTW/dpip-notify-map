@@ -103,7 +103,7 @@ function HomeContent() {
 
   // 載入地區數據
   useEffect(() => {
-    fetch('/region.json')
+    fetch('https://raw.githubusercontent.com/ExpTechTW/dpip-notify-map/refs/heads/main/public/region.json')
       .then(res => res.json())
       .then(data => setRegionData(data))
       .catch(err => console.error('Failed to load region data:', err));
