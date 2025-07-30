@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { LimitProvider } from "@/contexts/LimitContext";
 
 export const metadata: Metadata = {
   title: "DPIP 通知發送紀錄",
@@ -21,7 +22,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <LimitProvider>
+            {children}
+          </LimitProvider>
         </ThemeProvider>
       </body>
     </html>

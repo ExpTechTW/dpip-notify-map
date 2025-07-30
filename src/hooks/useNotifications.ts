@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { NotifyHistoryResponse, NotificationRecord } from '@/types/notify';
 
-export function useNotifications() {
+type LimitSetting = 'all' | number;
+
+export function useNotifications(limit: LimitSetting = 'all') {
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -14,7 +16,7 @@ export function useNotifications() {
         setLoading(true);
         setError(null);
         
-        const response = await fetch('https://api.exptech.dev/api/v2/notify/history');
+        const response = await fetch(`https://api.exptech.dev/api/v2/notify/history?limit=${limit}`);
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
@@ -41,7 +43,7 @@ export function useNotifications() {
     };
 
     fetchNotifications();
-  }, []);
+  }, [limit]);
 
   const refetch = () => {
     const fetchNotifications = async () => {
@@ -49,7 +51,8 @@ export function useNotifications() {
         setLoading(true);
         setError(null);
         
-        const response = await fetch('https://api.exptech.dev/api/v2/notify/history');
+        const limitParam = limit === 'all' ? '' : `?limit=${limit}`;
+        const response = await fetch(`https://api.exptech.dev/api/v2/notify/history${limitParam}`);
         const data: NotifyHistoryResponse = await response.json();
         
         if (data.success) {
