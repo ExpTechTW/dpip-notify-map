@@ -9,37 +9,143 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { NotificationRecord } from '@/types/notify';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { RefreshCcw, AlertTriangle, Loader2, Shield } from 'lucide-react';
+import { RefreshCcw, AlertTriangle, Loader2, Shield, BarChart3, Filter, X } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
+import Link from 'next/link';
+
+function isPointInPolygon(point: [number, number], polygon: number[][][]): boolean {
+  const [x, y] = point;
+  
+  for (const ring of polygon) {
+    let inside = false;
+    let j = ring.length - 1;
+    
+    for (let i = 0; i < ring.length; i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+      j = i;
+    }
+    
+    if (inside) return true;
+  }
+  
+  return false;
+}
 
 function HomeContent() {
   const { notifications, loading, error, refetch } = useNotifications();
   const [selectedNotification, setSelectedNotification] = useState<NotificationRecord | null>(null);
+  const [filteredNotifications, setFilteredNotifications] = useState<NotificationRecord[]>([]);
+  const [regionFilter, setRegionFilter] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const router = useRouter();
   
-  // 從 URL 參數讀取 timestamp
+  // 從 URL 參數讀取 region 和地區篩選
   useEffect(() => {
-    if (notifications.length > 0) {
+    const regionParam = searchParams.get('region');
+    if (regionParam) {
+      setRegionFilter(decodeURIComponent(regionParam));
+    } else {
+      setRegionFilter(null);
+    }
+  }, [searchParams]);
+
+  // 根據地區篩選通知
+  useEffect(() => {
+    if (!notifications.length) {
+      setFilteredNotifications([]);
+      return;
+    }
+
+    if (!regionFilter) {
+      setFilteredNotifications(notifications);
+      return;
+    }
+
+    const fetchRegionData = async () => {
+      try {
+        const response = await fetch('/region.json');
+        const regionData = await response.json();
+        
+        // 找到目標地區的代碼
+        const targetCodes: number[] = [];
+        let targetCoordinates: [number, number] | null = null;
+        
+        Object.entries(regionData as Record<string, Record<string, { code: number; lat: number; lon: number; site: number; area: string }>>).forEach(([city, districts]) => {
+          Object.entries(districts).forEach(([district, data]) => {
+            const fullName = `${city}${district}`;
+            if (fullName === regionFilter) {
+              targetCodes.push(data.code);
+              targetCoordinates = [data.lon, data.lat];
+            }
+          });
+        });
+
+        // 篩選包含指定地區的通知
+        const filtered = notifications.filter(notification => {
+          // 1. 檢查標題是否包含地區名稱
+          if (notification.title.includes(regionFilter)) {
+            return true;
+          }
+          
+          // 2. 檢查地區代碼
+          if (targetCodes.some(code => notification.codes.includes(code))) {
+            return true;
+          }
+          
+          // 3. 檢查 Polygon 是否包含該地區
+          if (targetCoordinates && notification.Polygons.length > 0) {
+            return notification.Polygons.some(polygon => {
+              const coordinates = 'coordinates' in polygon ? polygon.coordinates : polygon.geometry.coordinates;
+              return isPointInPolygon(targetCoordinates!, coordinates);
+            });
+          }
+          
+          return false;
+        });
+
+        setFilteredNotifications(filtered);
+      } catch (error) {
+        console.error('Failed to load region data for filtering:', error);
+        // 如果無法載入地區資料，則使用簡單的標題匹配
+        const filtered = notifications.filter(notification => 
+          notification.title.includes(regionFilter)
+        );
+        setFilteredNotifications(filtered);
+      }
+    };
+
+    fetchRegionData();
+  }, [notifications, regionFilter]);
+
+  // 從 URL 參數讀取 timestamp 並設置選中的通知
+  useEffect(() => {
+    const workingNotifications = regionFilter ? filteredNotifications : notifications;
+    
+    if (workingNotifications.length > 0) {
       const timestampParam = searchParams.get('t');
       if (timestampParam) {
         // 將參數轉換為數字進行比較
         const timestampNumber = parseInt(timestampParam, 10);
         // 找到對應的通知
-        const notification = notifications.find(n => n.timestamp === timestampNumber);
+        const notification = workingNotifications.find(n => n.timestamp === timestampNumber);
         
         if (notification) {
           setSelectedNotification(notification);
         } else {
           // 如果找不到，選擇第一個通知
-          setSelectedNotification(notifications[0]);
+          setSelectedNotification(workingNotifications[0]);
         }
       } else {
         // 沒有參數時，選擇第一個通知
-        setSelectedNotification(notifications[0]);
+        setSelectedNotification(workingNotifications[0]);
       }
     }
-  }, [notifications, searchParams]);
+  }, [notifications, filteredNotifications, regionFilter, searchParams]);
   
   // 更新 URL 當選擇不同通知
   const handleSelectNotification = (notification: NotificationRecord) => {
@@ -87,10 +193,39 @@ function HomeContent() {
             </div>
             <div>
               <h1 className="text-base sm:text-lg font-semibold text-foreground">DPIP 通知發送紀錄</h1>
-              <p className="text-xs text-muted-foreground">{notifications.length} 筆通知紀錄</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {regionFilter ? `${filteredNotifications.length} / ${notifications.length}` : notifications.length} 筆通知紀錄
+                </p>
+                {regionFilter && (
+                  <div className="flex items-center gap-1">
+                    <Filter className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">{regionFilter}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setRegionFilter(null);
+                        const params = new URLSearchParams(searchParams);
+                        params.delete('region');
+                        router.push(`/?${params.toString()}`, { scroll: false });
+                      }}
+                      className="h-4 w-4 p-0"
+                    >
+                      <X className="w-2 h-2" />
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            <Link href="/analytics">
+              <Button variant="outline" size="sm" className="gap-2">
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">統計分析</span>
+              </Button>
+            </Link>
             <ThemeToggle />
             <Button onClick={refetch} variant="outline" size="sm" className="gap-2">
               <RefreshCcw className="w-3.5 h-3.5" />
@@ -105,7 +240,7 @@ function HomeContent() {
         <div className="hidden xl:flex flex-1 min-h-0 gap-4">
           <Card className="w-80 flex-shrink-0 overflow-hidden">
             <NotificationList
-              notifications={notifications}
+              notifications={regionFilter ? filteredNotifications : notifications}
               selectedNotification={selectedNotification}
               onSelectNotification={handleSelectNotification}
             />
@@ -122,7 +257,7 @@ function HomeContent() {
         <div className="hidden lg:flex xl:hidden flex-1 min-h-0 gap-3">
           <Card className="w-72 flex-shrink-0 overflow-hidden">
             <NotificationList
-              notifications={notifications}
+              notifications={regionFilter ? filteredNotifications : notifications}
               selectedNotification={selectedNotification}
               onSelectNotification={handleSelectNotification}
             />
@@ -141,7 +276,7 @@ function HomeContent() {
         <div className="hidden md:flex lg:hidden flex-1 flex-col min-h-0 gap-3">
           <Card className="h-48 flex-shrink-0 overflow-hidden">
             <NotificationList
-              notifications={notifications}
+              notifications={regionFilter ? filteredNotifications : notifications}
               selectedNotification={selectedNotification}
               onSelectNotification={handleSelectNotification}
             />
@@ -160,7 +295,7 @@ function HomeContent() {
         <div className="flex md:hidden flex-1 flex-col min-h-0 gap-2">
           <Card className="h-[35%] flex-shrink-0 min-h-0 overflow-hidden">
             <NotificationList
-              notifications={notifications}
+              notifications={regionFilter ? filteredNotifications : notifications}
               selectedNotification={selectedNotification}
               onSelectNotification={handleSelectNotification}
             />
