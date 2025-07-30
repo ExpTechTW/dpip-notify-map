@@ -230,7 +230,6 @@ export default function AnalyticsPage() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [regionData, setRegionData] = useState<RegionStructure | null>(null);
-  const [townData, setTownData] = useState<Record<string, unknown> | null>(null);
   const [gridMatrix, setGridMatrix] = useState<Map<string, number> | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('city');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
@@ -329,12 +328,10 @@ export default function AnalyticsPage() {
   useEffect(() => {
     Promise.all([
       fetch('/region.json').then(res => res.json()),
-      fetch('/town.json').then(res => res.json()),
       loadGridMatrix()
     ])
-      .then(([regionData, townData, gridMatrix]) => {
+      .then(([regionData, gridMatrix]) => {
         setRegionData(regionData);
-        setTownData(townData);
         setGridMatrix(gridMatrix);
       })
       .catch(err => console.error('Failed to load region data:', err));
@@ -360,7 +357,7 @@ export default function AnalyticsPage() {
   }, [notifications, timeFilter, startDate, endDate]);
 
   const analyticsData = useMemo((): AnalyticsData => {
-    if (!regionData || !townData || !gridMatrix || !filteredNotifications.length) {
+    if (!regionData || !gridMatrix || !filteredNotifications.length) {
       return {
         regionStats: [],
         totalNotifications: 0,
@@ -643,7 +640,7 @@ export default function AnalyticsPage() {
       criticalNotifications: currentCriticalNotifications,
       typeDistribution: currentTypeDistribution
     };
-  }, [regionData, townData, gridMatrix, filteredNotifications, viewMode, selectedCity]);
+  }, [regionData, gridMatrix, filteredNotifications, viewMode, selectedCity]);
 
   if (loading) {
     return (
