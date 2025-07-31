@@ -146,32 +146,42 @@ function AnalyticsContent() {
       });
     });
     
-    // 為每個縣市計算通知數量
-    Object.keys(regionData).forEach(city => {
-      // 獲取該縣市的通知
-      const cityNotifications = filterNotificationsByRegionName(
+    // 添加全國廣播選項
+    cityStatsMap.set('全部(不指定地區的全部用戶廣播通知)', {
+      count: 0,
+      types: {},
+      criticalCount: 0,
+      districts: []
+    });
+    
+    // 優化：為每個縣市和全國廣播計算通知數量
+    const regionsToProcess = [...Object.keys(regionData), '全部(不指定地區的全部用戶廣播通知)'];
+    
+    regionsToProcess.forEach(region => {
+      // 獲取該地區的通知
+      const regionNotifications = filterNotificationsByRegionName(
         timeFilteredNotifications, 
-        city, 
+        region, 
         regionData, 
         gridMatrix
       );
       
-      const cityTypeDistribution: { [type: string]: number } = {};
-      let cityCriticalCount = 0;
+      const regionTypeDistribution: { [type: string]: number } = {};
+      let regionCriticalCount = 0;
       
-      cityNotifications.forEach(notification => {
+      regionNotifications.forEach(notification => {
         const notificationType = extractNotificationType(notification.title);
-        cityTypeDistribution[notificationType] = (cityTypeDistribution[notificationType] || 0) + 1;
+        regionTypeDistribution[notificationType] = (regionTypeDistribution[notificationType] || 0) + 1;
         if (notification.critical) {
-          cityCriticalCount++;
+          regionCriticalCount++;
         }
       });
       
-      cityStatsMap.set(city, {
-        count: cityNotifications.length,
-        types: cityTypeDistribution,
-        criticalCount: cityCriticalCount,
-        districts: Object.keys(regionData[city] || {})
+      cityStatsMap.set(region, {
+        count: regionNotifications.length,
+        types: regionTypeDistribution,
+        criticalCount: regionCriticalCount,
+        districts: region === '全部(不指定地區的全部用戶廣播通知)' ? [] : Object.keys(regionData[region] || {})
       });
     });
 
