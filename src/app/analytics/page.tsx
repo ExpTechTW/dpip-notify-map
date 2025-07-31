@@ -85,7 +85,26 @@ function AnalyticsContent() {
   
   const router = useRouter();
   
-  // 移除了舊的 URL 同步邏輯，現在由 useLimitSync 處理
+  // 建構首頁的 URL，保留時間篩選和數量參數
+  const homeUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    
+    // 保留時間篩選參數
+    if (timeFilter !== 'all') {
+      params.set('timeFilter', timeFilter);
+      if (timeFilter === 'timeSlot' && startDate && endDate) {
+        params.set('startDate', startDate);
+        params.set('endDate', endDate);
+      }
+    }
+    
+    // 保留數量限制參數
+    if (limitSetting !== 1000) {
+      params.set('limit', limitSetting.toString());
+    }
+    
+    return params.toString() ? `/?${params.toString()}` : '/';
+  }, [timeFilter, startDate, endDate, limitSetting]);
 
   // 緩存基本統計數據
   const basicStats = useMemo(() => {
@@ -340,7 +359,7 @@ function AnalyticsContent() {
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-4">
-          <Link href="/">
+          <Link href={homeUrl}>
             <Button variant="ghost" size="sm" className="gap-2">
               <ArrowLeft className="w-4 h-4" />
               返回首頁
@@ -632,8 +651,12 @@ function AnalyticsContent() {
                          const params = new URLSearchParams();
                          params.set('region', encodeURIComponent(region.name));
                          
-                         if (timeFilter === 'timeSlot') {
-                           params.set('timeFilter', 'timeSlot');
+                         if (timeFilter !== 'all') {
+                           params.set('timeFilter', timeFilter);
+                           if (timeFilter === 'timeSlot' && startDate && endDate) {
+                             params.set('startDate', startDate);
+                             params.set('endDate', endDate);
+                           }
                          }
                          if (limitSetting !== 1000) {
                            params.set('limit', limitSetting.toString());
@@ -684,8 +707,12 @@ function AnalyticsContent() {
                           const params = new URLSearchParams();
                           params.set('region', encodeURIComponent(region.name));
                           
-                          if (timeFilter === 'timeSlot') {
-                            params.set('timeFilter', 'timeSlot');
+                          if (timeFilter !== 'all') {
+                            params.set('timeFilter', timeFilter);
+                            if (timeFilter === 'timeSlot' && startDate && endDate) {
+                              params.set('startDate', startDate);
+                              params.set('endDate', endDate);
+                            }
                           }
                           if (limitSetting !== 1000) {
                             params.set('limit', limitSetting.toString());
@@ -763,8 +790,12 @@ function AnalyticsContent() {
                 const params = new URLSearchParams();
                 params.set('region', encodeURIComponent('全部(不指定地區的全部用戶廣播通知)'));
                 
-                if (timeFilter === 'timeSlot') {
-                  params.set('timeFilter', 'timeSlot');
+                if (timeFilter !== 'all') {
+                  params.set('timeFilter', timeFilter);
+                  if (timeFilter === 'timeSlot' && startDate && endDate) {
+                    params.set('startDate', startDate);
+                    params.set('endDate', endDate);
+                  }
                 }
                 if (limitSetting !== 1000) {
                   params.set('limit', limitSetting.toString());

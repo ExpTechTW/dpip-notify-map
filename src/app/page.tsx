@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useLimitSync } from '@/hooks/useLimitSync';
 import NotificationList from '@/components/NotificationList';
@@ -46,6 +46,27 @@ function HomeContent() {
   
   const searchParams = useSearchParams();
   const router = useRouter();
+  
+  // 建構分析頁面的 URL，保留時間篩選和數量參數
+  const analyticsUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    
+    // 保留時間篩選參數
+    if (timeFilter !== 'all') {
+      params.set('timeFilter', timeFilter);
+      if (timeFilter === 'timeSlot' && startDate && endDate) {
+        params.set('startDate', startDate);
+        params.set('endDate', endDate);
+      }
+    }
+    
+    // 保留數量限制參數
+    if (limitSetting !== 1000) {
+      params.set('limit', limitSetting.toString());
+    }
+    
+    return params.toString() ? `/analytics?${params.toString()}` : '/analytics';
+  }, [timeFilter, startDate, endDate, limitSetting]);
   
   // 從 URL 參數讀取各種篩選條件
   useEffect(() => {
@@ -307,7 +328,7 @@ function HomeContent() {
               </div>
             )}
             
-            <Link href="/analytics">
+            <Link href={analyticsUrl}>
               <Button variant="outline" size="sm" className="gap-2">
                 <BarChart3 className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">統計分析</span>
