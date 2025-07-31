@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { useRegionData } from '@/hooks/useRegionData';
 import { TimeFilterComponent, useTimeFilter, TimeFilter } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
+import { getPath } from '@/utils/navigation';
 
 
 function HomeContent() {
@@ -65,7 +66,7 @@ function HomeContent() {
       params.set('limit', limitSetting.toString());
     }
     
-    return params.toString() ? `/analytics?${params.toString()}` : '/analytics';
+    return params.toString() ? `${getPath('/analytics')}?${params.toString()}` : getPath('/analytics');
   }, [timeFilter, startDate, endDate, limitSetting]);
   
   // 從 URL 參數讀取各種篩選條件
@@ -197,7 +198,7 @@ function HomeContent() {
                         setRegionFilter(null);
                         const params = new URLSearchParams(searchParams);
                         params.delete('region');
-                        router.push(`/?${params.toString()}`, { scroll: false });
+                        router.push(`${getPath('/')}?${params.toString()}`, { scroll: false });
                       }}
                       className="h-4 w-4 p-0"
                     >
@@ -284,7 +285,7 @@ function HomeContent() {
                     } else {
                       params.delete('region');
                     }
-                    router.push(`/?${params.toString()}`, { scroll: false });
+                    router.push(`${getPath('/')}?${params.toString()}`, { scroll: false });
                   }}
                   className="text-xs border rounded px-2 py-1 bg-background"
                 >
@@ -312,7 +313,7 @@ function HomeContent() {
                       } else {
                         params.delete('region');
                       }
-                      router.push(`/?${params.toString()}`, { scroll: false });
+                      router.push(`${getPath('/')}?${params.toString()}`, { scroll: false });
                     }}
                     className="text-xs border rounded px-2 py-1 bg-background"
                   >
