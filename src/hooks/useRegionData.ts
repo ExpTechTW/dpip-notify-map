@@ -62,7 +62,7 @@ const loadGridMatrix = (): Promise<Map<string, number>> => {
     return gridMatrixPromise;
   }
   
-  gridMatrixPromise = fetch('/grid-matrix.json')
+  gridMatrixPromise = fetch('https://raw.githubusercontent.com/ExpTechTW/dpip-notify-map/refs/heads/main/public/grid-matrix.json')
     .then(res => {
       if (!res.ok) {
         throw new Error(`Failed to load grid matrix: ${res.status}`);
