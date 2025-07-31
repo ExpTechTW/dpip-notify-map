@@ -1,37 +1,22 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLimitContext } from '@/contexts/LimitContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { NotificationRecord } from '@/types/notify';
 import Link from 'next/link';
 import { ArrowLeft, Filter, X, ChevronRight } from 'lucide-react';
+import { useRegionData } from '@/hooks/useRegionData';
+import { TimeFilterComponent, useTimeFilter } from '@/components/TimeFilter';
+import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
+import { filterNotificationsByRegionName } from '@/utils/regionMatcher';
 
-interface RegionData {
-  code: number;
-  lat: number;
-  lon: number;
-  site: number;
-  area: string;
-}
+// RegionData interface is now imported from the hook
+// RegionStructure is replaced by the RegionData type from the hook
 
-interface RegionStructure {
-  [city: string]: {
-    [district: string]: RegionData;
-  };
-}
-
-type TimeFilter = 'recent24h' | 'timeSlot' | 'all';
 type ViewMode = 'city' | 'district';
-
-interface NotifyHistoryResponse {
-  success: boolean;
-  count: number;
-  records: NotificationRecord[];
-}
 
 interface AnalyticsData {
   regionStats: ({
@@ -48,161 +33,7 @@ interface AnalyticsData {
 }
 
 
-// 計算多邊形中心點（質心）
-function getPolygonCenter(coordinates: number[][][]): [number, number] {
-  const ring = coordinates[0]; // 使用外環
-  let centerX = 0, centerY = 0;
-  
-  for (const [x, y] of ring) {
-    centerX += x;
-    centerY += y;
-  }
-  
-  return [centerX / ring.length, centerY / ring.length];
-}
-
-// 載入預計算的矩陣網格
-async function loadGridMatrix(): Promise<Map<string, number>> {
-  try {
-    const response = await fetch('https://raw.githubusercontent.com/ExpTechTW/dpip-notify-map/refs/heads/main/public/grid-matrix.json');
-    const gridData = await response.json();
-    const gridMatrix = new Map<string, number>();
-    
-    // 將 JSON 物件轉換為 Map
-    Object.entries(gridData).forEach(([key, value]) => {
-      gridMatrix.set(key, value as number);
-    });
-    
-    return gridMatrix;
-  } catch (error) {
-    console.error('載入網格矩陣失敗:', error);
-    return new Map();
-  }
-}
-
-// 計算兩點之間的距離（簡化的球面距離）
-function calculateDistance(point1: [number, number], point2: [number, number]): number {
-  const [lon1, lat1] = point1;
-  const [lon2, lat2] = point2;
-  
-  // 簡化的歐幾里得距離（對於台灣這個尺度足夠）
-  const dLon = lon2 - lon1;
-  const dLat = lat2 - lat1;
-  return Math.sqrt(dLon * dLon + dLat * dLat);
-}
-
-// 找到最近的網格點（限制搜索範圍提升性能）
-function findNearestGridPoint(
-  centerPoint: [number, number], 
-  gridMatrix: Map<string, number>
-): number | null {
-  let minDistance = Infinity;
-  let nearestTownCode: number | null = null;
-  const [centerLon, centerLat] = centerPoint;
-  
-  // 限制搜索範圍（0.5度約55公里）
-  const searchRadius = 0.5;
-  const gridStep = 0.05;
-  
-  // 只檢查中心點周圍的網格點
-  for (let lon = centerLon - searchRadius; lon <= centerLon + searchRadius; lon += gridStep) {
-    for (let lat = centerLat - searchRadius; lat <= centerLat + searchRadius; lat += gridStep) {
-      const key = `${lon.toFixed(3)},${lat.toFixed(3)}`;
-      const townCode = gridMatrix.get(key);
-      
-      if (townCode) {
-        const distance = calculateDistance(centerPoint, [lon, lat]);
-        if (distance < minDistance) {
-          minDistance = distance;
-          nearestTownCode = townCode;
-        }
-      }
-    }
-  }
-  
-  // 如果在小範圍內沒找到，再檢查更大範圍
-  if (!nearestTownCode) {
-    for (const [gridKey, townCode] of gridMatrix.entries()) {
-      const [lonStr, latStr] = gridKey.split(',');
-      const gridPoint: [number, number] = [parseFloat(lonStr), parseFloat(latStr)];
-      
-      const distance = calculateDistance(centerPoint, gridPoint);
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearestTownCode = townCode;
-      }
-    }
-  }
-  
-  return nearestTownCode;
-}
-
-// 使用矩陣網格分配polygon到鄉鎮
-function assignPolygonToTownsByGrid(
-  polygonCoords: number[][][], 
-  gridMatrix: Map<string, number>
-): Map<number, number> {
-  const townCounts = new Map<number, number>();
-  
-  // 取得polygon的邊界
-  const bounds = getPolygonBounds(polygonCoords);
-  const gridStep = 0.05; // 與生成時保持一致
-  
-  // 檢查polygon邊界內的網格點
-  for (let lon = bounds.minLon; lon <= bounds.maxLon; lon += gridStep) {
-    for (let lat = bounds.minLat; lat <= bounds.maxLat; lat += gridStep) {
-      const key = `${lon.toFixed(3)},${lat.toFixed(3)}`;
-      const townCode = gridMatrix.get(key);
-      
-      if (townCode && isPointInPolygon([lon, lat], polygonCoords)) {
-        townCounts.set(townCode, (townCounts.get(townCode) || 0) + 1);
-      }
-    }
-  }
-  
-  return townCounts;
-}
-
-// 取得多邊形邊界
-function getPolygonBounds(coordinates: number[][][]) {
-  let minLon = Infinity, maxLon = -Infinity;
-  let minLat = Infinity, maxLat = -Infinity;
-  
-  for (const ring of coordinates) {
-    for (const [lon, lat] of ring) {
-      minLon = Math.min(minLon, lon);
-      maxLon = Math.max(maxLon, lon);
-      minLat = Math.min(minLat, lat);
-      maxLat = Math.max(maxLat, lat);
-    }
-  }
-  
-  return { minLon, maxLon, minLat, maxLat };
-}
-
-// 點在多邊形內的檢測 (保留用於後備)
-function isPointInPolygon(point: [number, number], polygon: number[][][]): boolean {
-  const [x, y] = point;
-  
-  for (const ring of polygon) {
-    let inside = false;
-    let j = ring.length - 1;
-    
-    for (let i = 0; i < ring.length; i++) {
-      const [xi, yi] = ring[i];
-      const [xj, yj] = ring[j];
-      
-      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
-        inside = !inside;
-      }
-      j = i;
-    }
-    
-    if (inside) return true;
-  }
-  
-  return false;
-}
+// 通知類型提取函數（保留用於統計）
 
 function extractNotificationType(title: string): string {
   if (title.includes('淹水感測')) return '📐 防災資訊(淹水感測)';
@@ -222,15 +53,30 @@ function extractNotificationType(title: string): string {
   return '其他';
 }
 
-export default function AnalyticsPage() {
-  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('recent24h');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  const [regionData, setRegionData] = useState<RegionStructure | null>(null);
-  const [gridMatrix, setGridMatrix] = useState<Map<string, number> | null>(null);
+function AnalyticsContent() {
+  // 使用統一的時間篩選 hook
+  const {
+    timeFilter,
+    startDate,
+    endDate,
+    handleTimeFilterChange,
+    handleStartDateChange,
+    handleEndDateChange,
+    handleApplyTimeSlot
+  } = useTimeFilter();
+  
+  const [currentRegionFilter, setCurrentRegionFilter] = useState<string | null>(null);
+  
+  // 使用統一的數據處理hook，並傳入地區篩選參數
+  const { 
+    finalNotifications: filteredNotifications,
+    timeFilteredNotifications,
+    loading, 
+    error 
+  } = useFilteredNotifications(currentRegionFilter);
+  
+  // Use the shared region data hook
+  const { regionData, gridMatrix } = useRegionData();
   const [viewMode, setViewMode] = useState<ViewMode>('city');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
@@ -238,39 +84,24 @@ export default function AnalyticsPage() {
   
   const router = useRouter();
   
-  // 更新URL參數的函數
-  const updateURL = (updates: { timeFilter?: string | null; limit?: string | null; startDate?: string; endDate?: string }) => {
+  // 更新URL參數的函數（只處理limit，時間篩選由useTimeFilter處理）
+  const updateLimitURL = (limit: string | null) => {
     const params = new URLSearchParams(window.location.search);
     
-    if (updates.timeFilter === null) {
-      params.delete('timeFilter');
-      params.delete('startDate');
-      params.delete('endDate');
-    } else if (updates.timeFilter) {
-      params.set('timeFilter', updates.timeFilter);
-      if (updates.timeFilter === 'timeSlot' && startDate && endDate) {
-        params.set('startDate', startDate);
-        params.set('endDate', endDate);
-      }
-    }
-    
-    if (updates.limit === null) {
+    if (limit === null) {
       params.delete('limit');
-    } else if (updates.limit) {
-      params.set('limit', updates.limit);
+    } else {
+      params.set('limit', limit);
     }
     
     router.push(`/analytics?${params.toString()}`, { scroll: false });
   };
   
-  // 從 URL 參數讀取篩選條件
+  // 從URL參數讀取limit設定（時間篩選由useTimeFilter處理）
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const limitParam = urlParams.get('limit');
-      const timeFilterParam = urlParams.get('timeFilter');
-      const startDateParam = urlParams.get('startDate');
-      const endDateParam = urlParams.get('endDate');
       
       if (limitParam) {
         const limitValue = limitParam === 'all' ? 'all' : parseInt(limitParam, 10);
@@ -278,86 +109,11 @@ export default function AnalyticsPage() {
           setLimitSetting(limitValue);
         }
       }
-      
-      if (timeFilterParam === 'timeSlot') {
-        setTimeFilter('timeSlot');
-        if (startDateParam) setStartDate(startDateParam);
-        if (endDateParam) setEndDate(endDateParam);
-      } else if (timeFilterParam === 'all') {
-        setTimeFilter('all');
-      }
     }
   }, [limitSetting, setLimitSetting]);
-  
-  // 獲取通知數據
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        const response = await fetch(`https://api.exptech.dev/api/v2/notify/history?limit=${limitSetting}`);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const data: NotifyHistoryResponse = await response.json();
-        
-        if (!data.success) {
-          throw new Error('API returned success: false');
-        }
-        
-        const sortedRecords = data.records.sort((a, b) => 
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        );
-        
-        setNotifications(sortedRecords);
-      } catch (err) {
-        console.error('Failed to fetch notifications:', err);
-        setError(err instanceof Error ? err.message : 'Unknown error occurred');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchNotifications();
-  }, [limitSetting]);
-  
-  // 獲取地區數據
-  useEffect(() => {
-    Promise.all([
-      fetch('https://raw.githubusercontent.com/ExpTechTW/dpip-notify-map/refs/heads/main/public/region.json').then(res => res.json()),
-      loadGridMatrix()
-    ])
-      .then(([regionData, gridMatrix]) => {
-        setRegionData(regionData);
-        setGridMatrix(gridMatrix);
-      })
-      .catch(err => console.error('Failed to load region data:', err));
-  }, []);
-
-  const filteredNotifications = useMemo(() => {
-    if (!notifications.length) return [];
-    
-    let filtered = notifications;
-    
-    // 時間篩選
-    if (timeFilter === 'recent24h') {
-      const now = Date.now();
-      const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
-      filtered = filtered.filter(n => n.timestamp >= twentyFourHoursAgo);
-    } else if (timeFilter === 'timeSlot' && startDate && endDate) {
-      const startTime = new Date(startDate).getTime();
-      const endTime = new Date(endDate + 'T23:59:59').getTime(); // 包含結束日期的整天
-      filtered = filtered.filter(n => n.timestamp >= startTime && n.timestamp <= endTime);
-    }
-    
-    return filtered;
-  }, [notifications, timeFilter, startDate, endDate]);
 
   const analyticsData = useMemo((): AnalyticsData => {
-    if (!regionData || !gridMatrix || !filteredNotifications.length) {
+    if (!regionData || !gridMatrix) {
       return {
         regionStats: [],
         totalNotifications: 0,
@@ -366,281 +122,161 @@ export default function AnalyticsPage() {
       };
     }
 
-    const regionMap = new Map<number, { name: string; count: number; types: { [type: string]: number }; criticalCount: number }>();
+    // 統計通知類型和緊急通知數量
     const typeDistribution: { [type: string]: number } = {};
     let criticalCount = 0;
 
-    // 建立地區代碼對應表
-    Object.entries(regionData).forEach(([city, districts]) => {
-      Object.entries(districts).forEach(([district, data]) => {
-        regionMap.set(data.code, {
-          name: `${city}${district}`,
-          count: 0,
-          types: {},
-          criticalCount: 0
-        });
-      });
-    });
-
-    // 用於追蹤未匹配到地區的通知
-    const unmatchedNotifications = new Map<string, { count: number; types: { [type: string]: number }; criticalCount: number }>();
-
     filteredNotifications.forEach(notification => {
+      const notificationType = extractNotificationType(notification.title);
+      typeDistribution[notificationType] = (typeDistribution[notificationType] || 0) + 1;
       if (notification.critical) {
         criticalCount++;
       }
+    });
 
-      // 統計通知類型
-      const type = extractNotificationType(notification.title);
-      
-      typeDistribution[type] = (typeDistribution[type] || 0) + 1;
-      
-      let hasRegionMatch = false;
-
-      // 處理直接指定的地區代碼
-      notification.codes.forEach(code => {
-        const region = regionMap.get(code);
-        if (region) {
-          region.count++;
-          region.types[type] = (region.types[type] || 0) + 1;
-          hasRegionMatch = true;
-          if (notification.critical) {
-            region.criticalCount++;
-          }
-        }
-      });
-
-      // 處理 Polygon 類型 - 使用網格矩陣系統
-      notification.Polygons.forEach((notificationPolygon) => {
-        const notificationCoordinates = 'coordinates' in notificationPolygon 
-          ? notificationPolygon.coordinates 
-          : notificationPolygon.geometry.coordinates;
+    let regionStats: AnalyticsData['regionStats'];
+    
+    if (!currentRegionFilter) {
+      // 沒有地區篩選時，計算所有縣市的統計
+      if (viewMode === 'city') {
+        // 使用時間篩選後的通知來計算各縣市統計
+        const cityStats = new Map<string, { count: number; types: { [type: string]: number }; criticalCount: number; districts: string[] }>();
         
-        // 使用網格矩陣分配polygon到鄉鎮
-        const townCounts = assignPolygonToTownsByGrid(notificationCoordinates, gridMatrix);
+        // 初始化所有縣市
+        Object.keys(regionData).forEach(city => {
+          cityStats.set(city, {
+            count: 0,
+            types: {},
+            criticalCount: 0,
+            districts: Object.keys(regionData[city] || {})
+          });
+        });
         
-        let bestTownCode: number | null = null;
-        
-        if (townCounts.size > 0) {
-          // 找出包含最多網格點的鄉鎮
-          let maxCount = 0;
+        // 為每個縣市計算通知數量
+        Object.keys(regionData).forEach(city => {
+          // 獲取該縣市的通知
+          const cityNotifications = filterNotificationsByRegionName(
+            timeFilteredNotifications, 
+            city, 
+            regionData, 
+            gridMatrix
+          );
           
-          for (const [townCode, count] of townCounts.entries()) {
-            if (count > maxCount) {
-              maxCount = count;
-              bestTownCode = townCode;
-            }
-          }
-        } else {
-          // 備用方案：找最近的網格點
-          const polygonCenter = getPolygonCenter(notificationCoordinates);
-          bestTownCode = findNearestGridPoint(polygonCenter, gridMatrix);
-        }
-        
-        // 分配給選定的鄉鎮
-        if (bestTownCode) {
-          const region = regionMap.get(bestTownCode);
-          if (region) {
-            region.count++;
-            region.types[type] = (region.types[type] || 0) + 1;
-            hasRegionMatch = true;
+          const cityTypeDistribution: { [type: string]: number } = {};
+          let cityCriticalCount = 0;
+          
+          cityNotifications.forEach(notification => {
+            const notificationType = extractNotificationType(notification.title);
+            cityTypeDistribution[notificationType] = (cityTypeDistribution[notificationType] || 0) + 1;
             if (notification.critical) {
-              region.criticalCount++;
+              cityCriticalCount++;
             }
-            
-          }
-        }
-      });
-      
-      // 處理未匹配到任何地區的通知
-      if (!hasRegionMatch) {
-        let cityKey = '其他地區';
-        
-        // 檢查是否為全部用戶廣播（無codes和polygons，或codes不是{topic}-{region code}格式）
-        if (notification.codes.length === 0 && notification.Polygons.length === 0) {
-          cityKey = '全部(不指定地區的全部用戶廣播通知)';
-        } else if (notification.codes.length > 0) {
-          // 檢查codes是否都不是{topic}-{region code}格式（即不包含數字）
-          const hasRegionCode = notification.codes.some(code => /\d+/.test(String(code)));
-          if (!hasRegionCode) {
-            cityKey = '全部(不指定地區的全部用戶廣播通知)';
-          } else {
-            // 嘗試從標題提取縣市
-            for (const city of Object.keys(regionData)) {
-              if (notification.title.includes(city)) {
-                cityKey = city;
-                break;
-              }
-            }
-          }
-        } else if (notification.Polygons.length > 0) {
-          cityKey = '未知區域廣播';
-        }
-        
-        if (!unmatchedNotifications.has(cityKey)) {
-          unmatchedNotifications.set(cityKey, { count: 0, types: {}, criticalCount: 0 });
-        }
-        
-        const unmatched = unmatchedNotifications.get(cityKey)!;
-        unmatched.count++;
-        unmatched.types[type] = (unmatched.types[type] || 0) + 1;
-        if (notification.critical) {
-          unmatched.criticalCount++;
-        }
-      }
-    });
-
-    let regionStats;
-    
-    if (viewMode === 'city') {
-      // 按縣市分組統計
-      const cityMap = new Map<string, { count: number; types: { [type: string]: number }; criticalCount: number; districts: string[] }>();
-      
-      Array.from(regionMap.entries()).forEach(([, stats]) => {
-        // 提取縣市名稱
-        let cityKey = '';
-        for (const [city] of Object.entries(regionData)) {
-          if (stats.name.startsWith(city)) {
-            cityKey = city;
-            break;
-          }
-        }
-        
-        if (!cityKey) return;
-        
-        if (!cityMap.has(cityKey)) {
-          cityMap.set(cityKey, { count: 0, types: {}, criticalCount: 0, districts: [] });
-        }
-        
-        const cityStats = cityMap.get(cityKey)!;
-        cityStats.count += stats.count;
-        cityStats.criticalCount += stats.criticalCount;
-        cityStats.districts.push(stats.name);
-        
-        Object.entries(stats.types).forEach(([type, count]) => {
-          cityStats.types[type] = (cityStats.types[type] || 0) + count;
+          });
+          
+          cityStats.set(city, {
+            count: cityNotifications.length,
+            types: cityTypeDistribution,
+            criticalCount: cityCriticalCount,
+            districts: Object.keys(regionData[city] || {})
+          });
         });
-      });
-      
-      // 加入未匹配的通知到對應的縣市
-      Array.from(unmatchedNotifications.entries()).forEach(([cityKey, unmatchedStats]) => {
-        if (!cityMap.has(cityKey)) {
-          cityMap.set(cityKey, { count: 0, types: {}, criticalCount: 0, districts: [] });
-        }
         
-        const cityStats = cityMap.get(cityKey)!;
-        cityStats.count += unmatchedStats.count;
-        cityStats.criticalCount += unmatchedStats.criticalCount;
-        
-        Object.entries(unmatchedStats.types).forEach(([type, count]) => {
-          cityStats.types[type] = (cityStats.types[type] || 0) + count;
-        });
-      });
-      
-      regionStats = Array.from(cityMap.entries())
-        .map(([city, stats]) => ({
-          code: 0,
-          name: city,
-          count: stats.count,
-          types: stats.types,
-          criticalCount: stats.criticalCount,
-          districts: stats.districts
-        }))
-        .filter(region => region.count > 0)
-        .sort((a, b) => b.count - a.count);
-    } else {
-      // 顯示選定縣市的鄉鎮區
-      console.log('鄉鎮區模式 - 選定的縣市:', selectedCity);
-      console.log('regionMap 內容:', Array.from(regionMap.entries()).slice(0, 5));
-      console.log('unmatchedNotifications 內容:', Array.from(unmatchedNotifications.entries()));
-      
-      const districtStats = Array.from(regionMap.entries())
-        .map(([code, stats]) => ({
-          code,
-          name: stats.name,
-          count: stats.count,
-          types: stats.types,
-          criticalCount: stats.criticalCount
-        }))
-        .filter(region => {
-          if (!selectedCity) return region.count > 0;
-          return region.name.startsWith(selectedCity) && region.count > 0;
-        });
-      
-      // 特殊分類處理
-      if (selectedCity && unmatchedNotifications.has(selectedCity)) {
-        const unmatchedStats = unmatchedNotifications.get(selectedCity)!;
-        console.log(`特殊分類 "${selectedCity}" 的統計:`, unmatchedStats);
-        
-        // 全國廣播等特殊分類不顯示詳細統計，僅用於類型分布計算
-        if (selectedCity !== '全部(不指定地區的全部用戶廣播通知)') {
-          districtStats.push({
+        // 轉換為數組並排序
+        regionStats = Array.from(cityStats.entries())
+          .map(([city, stats]) => ({
             code: 0,
-            name: selectedCity,
-            count: unmatchedStats.count,
-            types: unmatchedStats.types,
-            criticalCount: unmatchedStats.criticalCount
-          });
-        }
-      }
-      
-      regionStats = districtStats.sort((a, b) => b.count - a.count);
-      
-      console.log('最終鄉鎮區統計結果:', regionStats);
-    }
-
-    // 計算當前選中地區的統計
-    let currentTotalNotifications = filteredNotifications.length;
-    let currentCriticalNotifications = criticalCount;
-    let currentTypeDistribution = typeDistribution;
-    
-    if (viewMode === 'district' && selectedCity) {
-      console.log('計算鄉鎮區統計，選中城市:', selectedCity);
-      console.log('unmatchedNotifications:', Array.from(unmatchedNotifications.entries()));
-      
-      // 如果是特殊分類，使用特殊分類的統計
-      if (unmatchedNotifications.has(selectedCity)) {
-        const specialStats = unmatchedNotifications.get(selectedCity)!;
-        console.log('使用特殊分類統計:', specialStats);
-        currentTotalNotifications = specialStats.count;
-        currentCriticalNotifications = specialStats.criticalCount;
-        currentTypeDistribution = specialStats.types;
+            name: city,
+            count: stats.count,
+            types: stats.types,
+            criticalCount: stats.criticalCount,
+            districts: stats.districts
+          }))
+          .sort((a, b) => b.count - a.count);
       } else {
-        // 一般縣市：計算該縣市的統計
-        const cityNotifications = regionStats.filter(region => 
-          region.name.startsWith(selectedCity)
-        );
-        console.log('一般縣市通知:', cityNotifications);
-        currentTotalNotifications = cityNotifications.reduce((sum, region) => sum + region.count, 0);
-        currentCriticalNotifications = cityNotifications.reduce((sum, region) => sum + region.criticalCount, 0);
-        currentTypeDistribution = cityNotifications.reduce((acc, region) => {
-          Object.entries(region.types).forEach(([type, count]) => {
-            acc[type] = (acc[type] || 0) + count;
-          });
-          return acc;
-        }, {} as { [type: string]: number });
+        regionStats = [];
       }
-      
-      console.log('最終類型分布:', currentTypeDistribution);
-      console.log('全部類型分布 (typeDistribution):', typeDistribution);
+    } else {
+      // 有地區篩選時，使用已篩選的通知進行統計
+      if (viewMode === 'district' && currentRegionFilter) {
+        // 根據篩選的地區，顯示該地區的詳細統計
+        const isCountyLevel = Object.keys(regionData).includes(currentRegionFilter);
+        
+        if (isCountyLevel) {
+          // 縣市級別篩選：統計該縣市下各鄉鎮區的通知數量
+          const districtStats = new Map<string, { count: number; types: { [type: string]: number }; criticalCount: number }>();
+          
+          // 初始化該縣市下的所有鄉鎮區
+          Object.keys(regionData[currentRegionFilter] || {}).forEach(district => {
+            const fullDistrictName = `${currentRegionFilter}${district}`;
+            districtStats.set(fullDistrictName, {
+              count: 0,
+              types: {},
+              criticalCount: 0
+            });
+          });
+          
+          // 為每個鄉鎮區計算通知數量
+          Object.keys(regionData[currentRegionFilter] || {}).forEach(district => {
+            const fullDistrictName = `${currentRegionFilter}${district}`;
+            const districtNotifications = filterNotificationsByRegionName(
+              timeFilteredNotifications,
+              fullDistrictName,
+              regionData,
+              gridMatrix
+            );
+            
+            const districtTypeDistribution: { [type: string]: number } = {};
+            let districtCriticalCount = 0;
+            
+            districtNotifications.forEach(notification => {
+              const notificationType = extractNotificationType(notification.title);
+              districtTypeDistribution[notificationType] = (districtTypeDistribution[notificationType] || 0) + 1;
+              if (notification.critical) {
+                districtCriticalCount++;
+              }
+            });
+            
+            districtStats.set(fullDistrictName, {
+              count: districtNotifications.length,
+              types: districtTypeDistribution,
+              criticalCount: districtCriticalCount
+            });
+          });
+          
+          // 轉換為數組並排序
+          regionStats = Array.from(districtStats.entries())
+            .map(([districtName, stats]) => ({
+              code: 0,
+              name: districtName,
+              count: stats.count,
+              types: stats.types,
+              criticalCount: stats.criticalCount
+            }))
+            .sort((a, b) => b.count - a.count);
+        } else {
+          // 鄉鎮區級別篩選：顯示該鄉鎮區的統計
+          regionStats = [{
+            code: 0,
+            name: currentRegionFilter,
+            count: filteredNotifications.length,
+            types: typeDistribution,
+            criticalCount: criticalCount
+          }];
+        }
+      } else {
+        regionStats = [];
+      }
     }
-
-    console.log('返回的analytics數據:', {
-      regionStats: regionStats.slice(0, 3),
-      totalNotifications: currentTotalNotifications,
-      criticalNotifications: currentCriticalNotifications,
-      typeDistribution: currentTypeDistribution,
-      viewMode,
-      selectedCity
-    });
+    
+    console.groupEnd();
 
     return {
       regionStats,
-      totalNotifications: currentTotalNotifications,
-      criticalNotifications: currentCriticalNotifications,
-      typeDistribution: currentTypeDistribution
+      totalNotifications: filteredNotifications.length,
+      criticalNotifications: criticalCount,
+      typeDistribution: typeDistribution
     };
-  }, [regionData, gridMatrix, filteredNotifications, viewMode, selectedCity]);
+  }, [regionData, gridMatrix, filteredNotifications, timeFilteredNotifications, viewMode, selectedCity, currentRegionFilter]);
 
   if (loading) {
     return (
@@ -653,7 +289,15 @@ export default function AnalyticsPage() {
   if (error) {
     return (
       <div className="container mx-auto p-6">
-        <div className="text-center py-12 text-red-500">載入失敗: {error}</div>
+        <div className="text-center py-12 text-red-500">載入通知資料失敗: {error}</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="text-center py-12 text-red-500">載入資料失敗: {error}</div>
       </div>
     );
   }
@@ -680,6 +324,7 @@ export default function AnalyticsPage() {
                   onClick={() => {
                     setSelectedCity(null);
                     setSelectedDistrict(null);
+                    setCurrentRegionFilter(null);
                     setViewMode('city');
                   }}
                   className="h-6 w-6 p-0"
@@ -700,6 +345,7 @@ export default function AnalyticsPage() {
                 setViewMode('city');
                 setSelectedCity(null);
                 setSelectedDistrict(null);
+                setCurrentRegionFilter(null);
               }}
             >
               縣市
@@ -715,65 +361,16 @@ export default function AnalyticsPage() {
           </div>
           
           <div className="flex items-center gap-2">
-            <div className="flex gap-1 bg-muted rounded-lg p-1">
-              <Button
-                variant={timeFilter === 'recent24h' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => {
-                  setTimeFilter('recent24h');
-                  updateURL({ timeFilter: null });
-                }}
-              >
-                近 24 小時
-              </Button>
-              <Button
-                variant={timeFilter === 'timeSlot' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setTimeFilter('timeSlot')}
-              >
-                指定區間
-              </Button>
-              <Button
-                variant={timeFilter === 'all' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => {
-                  setTimeFilter('all');
-                  updateURL({ timeFilter: 'all' });
-                }}
-              >
-                全部區間
-              </Button>
-            </div>
-            
-            {timeFilter === 'timeSlot' && (
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="text-xs border rounded px-2 py-1 bg-background"
-                />
-                <span className="text-xs text-muted-foreground">至</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="text-xs border rounded px-2 py-1 bg-background"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    if (startDate && endDate) {
-                      updateURL({ timeFilter: 'timeSlot' });
-                    }
-                  }}
-                  disabled={!startDate || !endDate}
-                >
-                  套用
-                </Button>
-              </div>
-            )}
+            <TimeFilterComponent
+              timeFilter={timeFilter}
+              startDate={startDate}
+              endDate={endDate}
+              onTimeFilterChange={handleTimeFilterChange}
+              onStartDateChange={handleStartDateChange}
+              onEndDateChange={handleEndDateChange}
+              onApplyTimeSlot={handleApplyTimeSlot}
+              compact={true}
+            />
           </div>
           
           <div className="flex gap-1 bg-muted rounded-lg p-1">
@@ -782,7 +379,7 @@ export default function AnalyticsPage() {
               size="sm"
               onClick={() => {
                 setLimitSetting(100);
-                updateURL({ limit: '100' });
+                updateLimitURL('100');
               }}
             >
               100
@@ -792,7 +389,7 @@ export default function AnalyticsPage() {
               size="sm"
               onClick={() => {
                 setLimitSetting(500);
-                updateURL({ limit: '500' });
+                updateLimitURL('500');
               }}
             >
               500
@@ -802,7 +399,7 @@ export default function AnalyticsPage() {
               size="sm"
               onClick={() => {
                 setLimitSetting(1000);
-                updateURL({ limit: '1000' });
+                updateLimitURL('1000');
               }}
             >
               1000
@@ -812,7 +409,7 @@ export default function AnalyticsPage() {
               size="sm"
               onClick={() => {
                 setLimitSetting('all');
-                updateURL({ limit: 'all' });
+                updateLimitURL('all');
               }}
             >
               全部
@@ -907,10 +504,6 @@ export default function AnalyticsPage() {
                         return acc;
                       }, {} as { [type: string]: number });
                 
-                console.log('要顯示的類型分布:', distributionToShow);
-                console.log('viewMode:', viewMode, 'selectedCity:', selectedCity);
-                console.log('analyticsData.totalNotifications:', analyticsData.totalNotifications);
-                console.log('analyticsData.typeDistribution:', analyticsData.typeDistribution);
                 
                 return Object.entries(distributionToShow);
               })()
@@ -1005,9 +598,10 @@ export default function AnalyticsPage() {
                    }`}
                    onClick={() => {
                      if (viewMode === 'city') {
-                       // 縣市模式：切換到鄉鎮區模式
+                       // 縣市模式：切換到鄉鎮區模式，並應用地區篩選
                        setSelectedCity(region.name);
                        setSelectedDistrict(null);
+                       setCurrentRegionFilter(region.name);
                        setViewMode('district');
                      } else {
                        // 鄉鎮區模式：選中該鄉鎮區顯示詳細資訊
@@ -1023,8 +617,7 @@ export default function AnalyticsPage() {
                            params.set('limit', limitSetting.toString());
                          }
                          
-                         console.log('跳轉到首頁，參數:', params.toString());
-                         router.push(`/?${params.toString()}`);
+                          router.push(`/?${params.toString()}`);
                        } else {
                          // 未選中，選中該鄉鎮區
                          setSelectedDistrict(region.name);
@@ -1165,5 +758,21 @@ export default function AnalyticsPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function AnalyticsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center space-y-4 text-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <h2 className="text-xl font-semibold">載入中...</h2>
+          <p className="text-sm text-muted-foreground">正在獲取分析資料</p>
+        </div>
+      </div>
+    }>
+      <AnalyticsContent />
+    </Suspense>
   );
 }
