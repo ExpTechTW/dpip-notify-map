@@ -205,14 +205,26 @@ function AnalyticsContent() {
       if (viewMode === 'city') {
         // 轉換為數組並排序
         regionStats = Array.from(cityStats.entries())
-          .map(([city, stats]) => ({
-            code: 0,
-            name: city,
-            count: stats.count,
-            types: stats.types,
-            criticalCount: stats.criticalCount,
-            districts: stats.districts
-          }))
+          .map(([city, stats]) => {
+            // 查找該縣市的地區代碼，如果找不到則使用0
+            let cityCode = 0;
+            if (city !== '全部(不指定地區的全部用戶廣播通知)' && regionData[city]) {
+              // 使用該縣市第一個鄉鎮區的代碼作為縣市代碼的參考
+              const firstDistrict = Object.keys(regionData[city])[0];
+              if (firstDistrict && regionData[city][firstDistrict]) {
+                cityCode = Math.floor(regionData[city][firstDistrict].code / 1000) * 1000;
+              }
+            }
+            
+            return {
+              code: cityCode,
+              name: city,
+              count: stats.count,
+              types: stats.types,
+              criticalCount: stats.criticalCount,
+              districts: stats.districts
+            };
+          })
           .sort((a, b) => b.count - a.count);
       } else {
         regionStats = [];
@@ -267,18 +279,43 @@ function AnalyticsContent() {
           
           // 轉換為數組並排序
           regionStats = Array.from(districtStats.entries())
-            .map(([districtName, stats]) => ({
-              code: 0,
-              name: districtName,
-              count: stats.count,
-              types: stats.types,
-              criticalCount: stats.criticalCount
-            }))
+            .map(([districtName, stats]) => {
+              // 查找該鄉鎮區的實際地區代碼
+              let districtCode = 0;
+              const cityName = currentRegionFilter;
+              const districtOnly = districtName.replace(cityName, '');
+              
+              if (regionData[cityName] && regionData[cityName][districtOnly]) {
+                districtCode = regionData[cityName][districtOnly].code;
+              }
+              
+              return {
+                code: districtCode,
+                name: districtName,
+                count: stats.count,
+                types: stats.types,
+                criticalCount: stats.criticalCount
+              };
+            })
             .sort((a, b) => b.count - a.count);
         } else {
           // 鄉鎮區級別篩選：顯示該鄉鎮區的統計
+          let singleRegionCode = 0;
+          
+          // 嘗試找到該地區的實際代碼
+          for (const [cityName, cityData] of Object.entries(regionData)) {
+            for (const [districtName, districtData] of Object.entries(cityData)) {
+              const fullName = `${cityName}${districtName}`;
+              if (fullName === currentRegionFilter) {
+                singleRegionCode = districtData.code;
+                break;
+              }
+            }
+            if (singleRegionCode !== 0) break;
+          }
+          
           regionStats = [{
-            code: 0,
+            code: singleRegionCode,
             name: currentRegionFilter,
             count: filteredNotifications.length,
             types: basicStats.typeDistribution,

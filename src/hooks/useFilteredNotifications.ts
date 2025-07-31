@@ -1,12 +1,10 @@
 'use client';
 
-import { useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 import { NotificationRecord } from '@/types/notify';
-import { useNotifications } from '@/hooks/useNotifications';
-import { useRegionData } from '@/hooks/useRegionData';
+import { useDataContext } from '@/contexts/DataContext';
 import { useTimeFilter } from '@/components/TimeFilter';
-import { filterNotificationsByRegionName, precomputeAllRegionMatches, isRegionMatchesPrecomputed } from '@/utils/regionMatcher';
-import { useLimitContext } from '@/contexts/LimitContext';
+import { filterNotificationsByRegionName } from '@/utils/regionMatcher';
 
 export interface FilteredNotificationsResult {
   notifications: NotificationRecord[];
@@ -19,22 +17,17 @@ export interface FilteredNotificationsResult {
 }
 
 export function useFilteredNotifications(regionFilter?: string | null) {
-  const { limitSetting } = useLimitContext();
-  const { notifications, loading, error, refetch } = useNotifications(limitSetting);
-  const { regionData, gridMatrix, error: regionError } = useRegionData();
+  const { 
+    notifications, 
+    notificationsLoading, 
+    notificationsError,
+    regionData, 
+    gridMatrix, 
+    regionDataError,
+    isDataReady,
+    refetchNotifications
+  } = useDataContext();
   const { filterNotificationsByTime } = useTimeFilter();
-  
-  // 預計算所有通知的地區匹配結果
-  useEffect(() => {
-    if (notifications.length > 0 && regionData && gridMatrix && !isRegionMatchesPrecomputed()) {
-      // 在背景中進行預計算，不阻塞 UI
-      const timer = setTimeout(() => {
-        // 只在非載入狀態且有足夠通知時才預計算\n        if (!loading && notifications.length >= 10) {\n          precomputeAllRegionMatches(notifications, regionData, gridMatrix);\n        }
-      }, 500); // 增加延遲確保 UI 完全載入
-      
-      return () => clearTimeout(timer);
-    }
-  }, [notifications, regionData, gridMatrix, loading]);
 
   // 1. 時間篩選
   const timeFilteredNotifications = useMemo(() => {
@@ -99,8 +92,8 @@ export function useFilteredNotifications(regionFilter?: string | null) {
     timeFilteredNotifications,
     regionFilteredNotifications,
     finalNotifications,
-    loading,
-    error: error || regionError,
-    refetch
+    loading: notificationsLoading || !isDataReady,
+    error: notificationsError || regionDataError,
+    refetch: refetchNotifications
   };
 }
