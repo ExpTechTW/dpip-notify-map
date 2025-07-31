@@ -18,6 +18,11 @@ export function useLimitSync() {
       if (limitValue !== limitSetting && !isNaN(limitValue as number)) {
         setLimitSetting(limitValue);
       }
+    } else {
+      // 沒有 URL 參數時，確保使用預設值 100
+      if (limitSetting !== 100) {
+        setLimitSetting(100);
+      }
     }
   }, []); // 空依賴數組，只在初始載入時執行
 
