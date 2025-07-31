@@ -13,7 +13,6 @@ import { useRegionData } from '@/hooks/useRegionData';
 import { TimeFilterComponent, useTimeFilter } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
 import { filterNotificationsByRegionName } from '@/utils/regionMatcher';
-import { getPath } from '@/utils/navigation';
 
 // RegionData interface is now imported from the hook
 // RegionStructure is replaced by the RegionData type from the hook
@@ -105,7 +104,7 @@ function AnalyticsContent() {
       params.set('limit', limitSetting.toString());
     }
     
-    return params.toString() ? `${getPath('/')}?${params.toString()}` : getPath('/');
+    return params.toString() ? `/?${params.toString()}` : '/';
   }, [timeFilter, startDate, endDate, limitSetting]);
 
   // 緩存基本統計數據
@@ -664,7 +663,7 @@ function AnalyticsContent() {
                            params.set('limit', limitSetting.toString());
                          }
                          
-                          router.push(`${getPath('/')}?${params.toString()}`);
+                          router.push(`/?${params.toString()}`);
                        } else {
                          // 未選中，選中該鄉鎮區
                          setSelectedDistrict(region.name);
@@ -720,7 +719,7 @@ function AnalyticsContent() {
                             params.set('limit', limitSetting.toString());
                           }
                           
-                          router.push(`${getPath('/')}?${params.toString()}`);
+                          router.push(`/?${params.toString()}`);
                         }}
                       >
                         前往地圖
