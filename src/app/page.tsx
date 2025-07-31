@@ -61,7 +61,7 @@ function HomeContent() {
     }
     
     // 保留數量限制參數
-    if (limitSetting !== 1000) {
+    if (limitSetting !== 100) {
       params.set('limit', limitSetting.toString());
     }
     
@@ -71,7 +71,6 @@ function HomeContent() {
   // 從 URL 參數讀取各種篩選條件
   useEffect(() => {
     const regionParam = searchParams.get('region');
-    const limitParam = searchParams.get('limit');
     
     // 處理地區篩選
     if (regionParam) {

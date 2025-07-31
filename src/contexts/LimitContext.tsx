@@ -12,7 +12,7 @@ interface LimitContextType {
 const LimitContext = createContext<LimitContextType | undefined>(undefined);
 
 export function LimitProvider({ children }: { children: ReactNode }) {
-  const [limitSetting, setLimitSetting] = useState<LimitSetting>(1000);
+  const [limitSetting, setLimitSetting] = useState<LimitSetting>(100);
 
   return (
     <LimitContext.Provider value={{ limitSetting, setLimitSetting }}>

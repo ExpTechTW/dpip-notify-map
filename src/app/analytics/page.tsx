@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useState, useMemo, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLimitSync } from '@/hooks/useLimitSync';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -51,6 +51,7 @@ function extractNotificationType(title: string): string {
   if (title.includes('小區域有感地震')) return '🔔 地震報告 [小區域有感地震]';
   if (title.includes('強震監視器')) return '📡 強震監視器';
   if (title.includes('震度速報')) return '📨 震度速報';
+  if (title.includes('山區暴雨')) return '⛈️ 山區暴雨';
   return '其他';
 }
 
@@ -99,7 +100,7 @@ function AnalyticsContent() {
     }
     
     // 保留數量限制參數
-    if (limitSetting !== 1000) {
+    if (limitSetting !== 100) {
       params.set('limit', limitSetting.toString());
     }
     
@@ -658,7 +659,7 @@ function AnalyticsContent() {
                              params.set('endDate', endDate);
                            }
                          }
-                         if (limitSetting !== 1000) {
+                         if (limitSetting !== 100) {
                            params.set('limit', limitSetting.toString());
                          }
                          
@@ -714,7 +715,7 @@ function AnalyticsContent() {
                               params.set('endDate', endDate);
                             }
                           }
-                          if (limitSetting !== 1000) {
+                          if (limitSetting !== 100) {
                             params.set('limit', limitSetting.toString());
                           }
                           
@@ -797,7 +798,7 @@ function AnalyticsContent() {
                     params.set('endDate', endDate);
                   }
                 }
-                if (limitSetting !== 1000) {
+                if (limitSetting !== 100) {
                   params.set('limit', limitSetting.toString());
                 }
                 

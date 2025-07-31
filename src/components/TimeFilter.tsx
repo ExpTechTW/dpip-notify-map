@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export type TimeFilter = 'recent24h' | 'all' | 'timeSlot';
+export type TimeFilter = 'recent1h' | 'recent24h' | 'all' | 'timeSlot';
 
 export interface TimeFilterProps {
   timeFilter: TimeFilter;
@@ -30,6 +30,14 @@ export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
   return (
     <div className={`space-y-2 ${compact ? 'text-xs' : ''}`}>
       <div className="flex gap-1 bg-muted rounded-lg p-1">
+        <Button
+          variant={timeFilter === 'recent1h' ? 'default' : 'ghost'}
+          size={compact ? 'sm' : 'default'}
+          onClick={() => onTimeFilterChange('recent1h')}
+          className={compact ? 'text-xs px-2 py-1 h-auto' : ''}
+        >
+          近 1 小時
+        </Button>
         <Button
           variant={timeFilter === 'recent24h' ? 'default' : 'ghost'}
           size={compact ? 'sm' : 'default'}
@@ -178,7 +186,11 @@ export const useTimeFilter = () => {
     
     let filtered = notifications;
     
-    if (timeFilter === 'recent24h') {
+    if (timeFilter === 'recent1h') {
+      const now = Date.now();
+      const oneHourAgo = now - (1 * 60 * 60 * 1000);
+      filtered = filtered.filter(n => n.timestamp >= oneHourAgo);
+    } else if (timeFilter === 'recent24h') {
       const now = Date.now();
       const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
       filtered = filtered.filter(n => n.timestamp >= twentyFourHoursAgo);
