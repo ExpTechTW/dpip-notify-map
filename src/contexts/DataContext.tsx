@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useRegionData } from '@/hooks/useRegionData';
+import { useLimitContext } from '@/contexts/LimitContext';
 import { precomputeAllRegionMatches } from '@/utils/regionMatcher';
 import type { NotificationRecord } from '@/types/notify';
 import type { RegionData } from '@/hooks/useRegionData';
@@ -43,14 +44,18 @@ export function useDataContext() {
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [precomputeCompleted, setPrecomputeCompleted] = useState(false);
   const [precomputeLoading, setPrecomputeLoading] = useState(false);
+  const [isClient, setIsClient] = useState(false);
   
-  // 使用現有的 hooks，預設載入全部通知
+  // 使用 LimitContext 的設定
+  const { limitSetting } = useLimitContext();
+  
+  // 使用現有的 hooks，根據 limitSetting 載入通知
   const {
     notifications,
     loading: notificationsLoading,
     error: notificationsError,
     refetch: refetchNotifications
-  } = useNotifications('all');
+  } = useNotifications(limitSetting);
   
   const {
     regionData,
@@ -59,31 +64,36 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     error: regionDataError
   } = useRegionData();
   
-  // 執行預計算
+  // 檢測客戶端環境
   useEffect(() => {
-    if (notifications.length > 0 && regionData && gridMatrix && !precomputeCompleted && !precomputeLoading) {
+    setIsClient(true);
+  }, []);
+  
+  // 執行簡化的預計算（只在客戶端執行）
+  useEffect(() => {
+    if (isClient && notifications.length > 0 && regionData && gridMatrix && !precomputeCompleted && !precomputeLoading) {
       setPrecomputeLoading(true);
       
-      // 使用 setTimeout 來避免阻塞 UI
-      setTimeout(async () => {
-        try {
-          await precomputeAllRegionMatches(notifications, regionData, gridMatrix);
+      // 簡化預計算現在是同步的，速度極快
+      precomputeAllRegionMatches(notifications, regionData, gridMatrix)
+        .then(() => {
           setPrecomputeCompleted(true);
-        } catch (error) {
-          console.error('預計算失敗:', error);
-        } finally {
           setPrecomputeLoading(false);
-        }
-      }, 0);
+        })
+        .catch((error) => {
+          console.error('預計算失敗:', error);
+          setPrecomputeLoading(false);
+        });
     }
-  }, [notifications, regionData, gridMatrix, precomputeCompleted, precomputeLoading]);
+  }, [isClient, notifications, regionData, gridMatrix, precomputeCompleted, precomputeLoading]);
   
   // 當通知資料重新載入時，重置預計算狀態
   useEffect(() => {
     setPrecomputeCompleted(false);
   }, [notifications]);
   
-  const isDataReady = !notificationsLoading && 
+  const isDataReady = isClient &&
+                     !notificationsLoading && 
                      !regionDataLoading && 
                      !precomputeLoading && 
                      precomputeCompleted &&

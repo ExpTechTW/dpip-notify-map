@@ -51,8 +51,7 @@ export function useNotifications(limit: LimitSetting = 'all') {
         setLoading(true);
         setError(null);
         
-        const limitParam = limit === 'all' ? '' : `?limit=${limit}`;
-        const response = await fetch(`https://api.exptech.dev/api/v2/notify/history${limitParam}`);
+        const response = await fetch(`https://api.exptech.dev/api/v2/notify/history?limit=${limit}`);
         const data: NotifyHistoryResponse = await response.json();
         
         if (data.success) {

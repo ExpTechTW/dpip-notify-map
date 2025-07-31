@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
-import { useLimitContext } from '@/contexts/LimitContext';
+import { useLimitSync } from '@/hooks/useLimitSync';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { ArrowLeft, Filter, X, ChevronRight } from 'lucide-react';
+import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { useRegionData } from '@/hooks/useRegionData';
 import { TimeFilterComponent, useTimeFilter } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
@@ -80,37 +81,11 @@ function AnalyticsContent() {
   const [viewMode, setViewMode] = useState<ViewMode>('city');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  const { limitSetting, setLimitSetting } = useLimitContext();
+  const { limitSetting, updateLimit } = useLimitSync();
   
   const router = useRouter();
   
-  // 更新URL參數的函數（只處理limit，時間篩選由useTimeFilter處理）
-  const updateLimitURL = (limit: string | null) => {
-    const params = new URLSearchParams(window.location.search);
-    
-    if (limit === null) {
-      params.delete('limit');
-    } else {
-      params.set('limit', limit);
-    }
-    
-    router.push(`/analytics?${params.toString()}`, { scroll: false });
-  };
-  
-  // 從URL參數讀取limit設定（時間篩選由useTimeFilter處理）
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
-      const limitParam = urlParams.get('limit');
-      
-      if (limitParam) {
-        const limitValue = limitParam === 'all' ? 'all' : parseInt(limitParam, 10);
-        if (limitValue !== limitSetting) {
-          setLimitSetting(limitValue);
-        }
-      }
-    }
-  }, [limitSetting, setLimitSetting]);
+  // 移除了舊的 URL 同步邏輯，現在由 useLimitSync 處理
 
   // 緩存基本統計數據
   const basicStats = useMemo(() => {
@@ -337,9 +312,11 @@ function AnalyticsContent() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="text-center py-12">載入分析資料中...</div>
-      </div>
+      <LoadingSpinner 
+        fullScreen 
+        message="載入分析資料中..." 
+        description="正在處理通知統計" 
+      />
     );
   }
 
@@ -434,40 +411,28 @@ function AnalyticsContent() {
             <Button
               variant={limitSetting === 100 ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => {
-                setLimitSetting(100);
-                updateLimitURL('100');
-              }}
+              onClick={() => updateLimit(100)}
             >
               100
             </Button>
             <Button
               variant={limitSetting === 500 ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => {
-                setLimitSetting(500);
-                updateLimitURL('500');
-              }}
+              onClick={() => updateLimit(500)}
             >
               500
             </Button>
             <Button
               variant={limitSetting === 1000 ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => {
-                setLimitSetting(1000);
-                updateLimitURL('1000');
-              }}
+              onClick={() => updateLimit(1000)}
             >
               1000
             </Button>
             <Button
               variant={limitSetting === 'all' ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => {
-                setLimitSetting('all');
-                updateLimitURL('all');
-              }}
+              onClick={() => updateLimit('all')}
             >
               全部
             </Button>
@@ -821,13 +786,12 @@ function AnalyticsContent() {
 export default function AnalyticsPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center space-y-4 text-center">
-          <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <h2 className="text-xl font-semibold">載入中...</h2>
-          <p className="text-sm text-muted-foreground">正在獲取分析資料</p>
-        </div>
-      </div>
+      <LoadingSpinner 
+        fullScreen 
+        size="lg"
+        message="載入中..." 
+        description="正在獲取分析資料" 
+      />
     }>
       <AnalyticsContent />
     </Suspense>

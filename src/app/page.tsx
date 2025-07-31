@@ -2,14 +2,15 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useLimitContext } from '@/contexts/LimitContext';
+import { useLimitSync } from '@/hooks/useLimitSync';
 import NotificationList from '@/components/NotificationList';
 import PhonePreview from '@/components/PhonePreview';
 import MapView from '@/components/MapView';
 import { NotificationRecord } from '@/types/notify';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { RefreshCcw, AlertTriangle, Loader2, Shield, BarChart3, Filter, X } from 'lucide-react';
+import { RefreshCcw, AlertTriangle, Shield, BarChart3, Filter, X } from 'lucide-react';
+import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ThemeToggle } from '@/components/theme-toggle';
 import Link from 'next/link';
 import { useRegionData } from '@/hooks/useRegionData';
@@ -18,7 +19,7 @@ import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
 
 
 function HomeContent() {
-  const { limitSetting, setLimitSetting } = useLimitContext();
+  const { limitSetting, updateLimit } = useLimitSync();
   const [selectedNotification, setSelectedNotification] = useState<NotificationRecord | null>(null);
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
@@ -84,14 +85,7 @@ function HomeContent() {
       setSelectedDistrict(null);
     }
     
-    // 處理限制數量設定
-    if (limitParam) {
-      const limitValue = limitParam === 'all' ? 'all' : parseInt(limitParam, 10);
-      if (limitValue !== limitSetting) {
-        setLimitSetting(limitValue);
-      }
-    }
-  }, [searchParams, limitSetting, setLimitSetting, regionData]);
+  }, [searchParams, regionData]);
 
 
   // 從 URL 參數讀取 timestamp 並設置選中的通知
@@ -130,12 +124,11 @@ function HomeContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-4" />
-          <p className="text-sm text-muted-foreground">載入中...</p>
-        </div>
-      </div>
+      <LoadingSpinner 
+        fullScreen 
+        message="載入中..." 
+        description="正在獲取通知資料" 
+      />
     );
   }
 
@@ -227,48 +220,28 @@ function HomeContent() {
               <Button
                 variant={limitSetting === 100 ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => {
-                  setLimitSetting(100);
-                  const params = new URLSearchParams(searchParams);
-                  params.set('limit', '100');
-                  router.push(`/?${params.toString()}`, { scroll: false });
-                }}
+                onClick={() => updateLimit(100)}
               >
                 100
               </Button>
               <Button
                 variant={limitSetting === 500 ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => {
-                  setLimitSetting(500);
-                  const params = new URLSearchParams(searchParams);
-                  params.set('limit', '500');
-                  router.push(`/?${params.toString()}`, { scroll: false });
-                }}
+                onClick={() => updateLimit(500)}
               >
                 500
               </Button>
               <Button
                 variant={limitSetting === 1000 ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => {
-                  setLimitSetting(1000);
-                  const params = new URLSearchParams(searchParams);
-                  params.set('limit', '1000');
-                  router.push(`/?${params.toString()}`, { scroll: false });
-                }}
+                onClick={() => updateLimit(1000)}
               >
                 1000
               </Button>
               <Button
                 variant={limitSetting === 'all' ? 'default' : 'ghost'}
                 size="sm"
-                onClick={() => {
-                  setLimitSetting('all');
-                  const params = new URLSearchParams(searchParams);
-                  params.set('limit', 'all');
-                  router.push(`/?${params.toString()}`, { scroll: false });
-                }}
+                onClick={() => updateLimit('all')}
               >
                 全部
               </Button>
@@ -426,13 +399,12 @@ function HomeContent() {
 export default function Home() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center space-y-4 text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-muted-foreground" />
-          <h2 className="text-xl font-semibold">載入中...</h2>
-          <p className="text-sm text-muted-foreground">正在獲取通知資料</p>
-        </div>
-      </div>
+      <LoadingSpinner 
+        fullScreen 
+        size="lg"
+        message="載入中..." 
+        description="正在獲取通知資料" 
+      />
     }>
       <HomeContent />
     </Suspense>

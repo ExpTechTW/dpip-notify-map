@@ -162,67 +162,33 @@ export interface RegionMatchResult {
   isOtherArea: boolean; // 是否為其他地區
 }
 
-// 預先計算所有通知的地區匹配結果（優化版）
+// 簡化的預計算 - 只預計算複雜的多邊形通知
 export function precomputeAllRegionMatches(
   notifications: NotificationRecord[],
   regionData: Record<string, Record<string, { code: number; lat: number; lon: number; site: number; area: string }>>,
   gridMatrix: Map<string, number>
-): void {
-  console.log('🔄 開始預計算', notifications.length, '筆通知的地區匹配...');
-  const startTime = performance.now();
-  
-  precomputedRegionMatches.clear();
-  
-  // 優化：使用批次處理以避免阻塞 UI
-  const batchSize = 50; // 減少批次大小以提高響應性
-  let currentIndex = 0;
-  
-  const processBatch = () => {
-    const endIndex = Math.min(currentIndex + batchSize, notifications.length);
+): Promise<void> {
+  return new Promise((resolve) => {
+    console.log('🔄 開始簡化預計算...');
+    const startTime = performance.now();
     
-    for (let i = currentIndex; i < endIndex; i++) {
-      const notification = notifications[i];
-      
-      // 優化：跳過簡單或已知類型的通知
-      if (notification.codes.length === 0 && notification.Polygons.length === 0) {
-        // 全國廣播，直接標記
-        precomputedRegionMatches.set(notification.timestamp, {
-          matchedRegions: new Set<number>(),
-          isNationwide: true,
-          isUnknownArea: false,
-          isOtherArea: false
-        });
-      } else if (notification.codes.length > 0 && notification.Polygons.length === 0) {
-        // 只有 codes，快速處理
-        const result = computeNotificationRegions(notification, regionData, gridMatrix);
-        precomputedRegionMatches.set(notification.timestamp, result);
-      } else {
-        // 有 Polygons，需要完整計算
-        const result = computeNotificationRegions(notification, regionData, gridMatrix);
-        precomputedRegionMatches.set(notification.timestamp, result);
-      }
-    }
+    precomputedRegionMatches.clear();
     
-    currentIndex = endIndex;
+    // 只預計算有多邊形的複雜通知（約5-10%的通知）
+    const polygonNotifications = notifications.filter(n => n.Polygons.length > 0);
+    console.log(`📊 需要預計算的多邊形通知: ${polygonNotifications.length}/${notifications.length}`);
     
-    if (currentIndex < notifications.length) {
-      // 繼續處理下一批
-      setTimeout(processBatch, 10); // 縮短延遲時間
-      
-      // 每處理一批顯示進度
-      if (currentIndex % (batchSize * 2) === 0) {
-        console.log(`📊 已處理 ${currentIndex}/${notifications.length} 筆通知 (${Math.round((currentIndex / notifications.length) * 100)}%)`);
-      }
-    } else {
-      // 完成
-      isPrecomputationComplete = true;
-      const endTime = performance.now();
-      console.log(`✅ 預計算完成！耗時 ${(endTime - startTime).toFixed(2)}ms`);
-    }
-  };
-  
-  // 開始處理
-  processBatch();
+    // 同步處理，因為數量已經大幅減少
+    polygonNotifications.forEach(notification => {
+      const result = computeNotificationRegions(notification, regionData, gridMatrix);
+      precomputedRegionMatches.set(notification.timestamp, result);
+    });
+    
+    isPrecomputationComplete = true;
+    const endTime = performance.now();
+    console.log(`✅ 簡化預計算完成！耗時 ${(endTime - startTime).toFixed(2)}ms`);
+    resolve();
+  });
 }
 
 // 內部計算函數（不使用快取）
@@ -342,57 +308,65 @@ function computeNotificationRegions(
     else {
       result.isOtherArea = true;
     }
-  }
-
-  // 3. 判斷特殊類型
-  if (result.matchedRegions.size === 0) {
-    // 檢查是否為全國廣播
-    if (notification.codes.length === 0 && notification.Polygons.length === 0) {
-      result.isNationwide = true;
-    }
-    // 檢查是否為無數字區域代碼的通知
-    else if (notification.codes.length > 0 && notification.codes.every(code => {
-      // 檢查是否為無效代碼
-      let isInvalid = true;
-      for (const [, districts] of Object.entries(regionData)) {
-        for (const [, data] of Object.entries(districts)) {
-          if (data.code === code) {
-            isInvalid = false;
-            break;
-          }
-        }
-        if (!isInvalid) break;
-      }
-      return isInvalid;
-    })) {
-      result.isNationwide = true;
-    }
-    // 有polygon但無法匹配到已知地區
-    else if (notification.Polygons.length > 0) {
-      result.isUnknownArea = true;
-    }
-    // 有代碼但不匹配任何已知地區
-    else {
-      result.isOtherArea = true;
-    }
   } 
   
   return result;
 }
 
-// 統一的地區匹配邏輯（使用預計算結果）
+// 統一的地區匹配邏輯（簡化版）
 export function matchNotificationToRegions(
   notification: NotificationRecord,
   regionData: Record<string, Record<string, { code: number; lat: number; lon: number; site: number; area: string }>>,
   gridMatrix: Map<string, number>,
   debug: boolean = false
 ): RegionMatchResult {
-  // 如果預計算完成，直接返回結果
-  if (isPrecomputationComplete && precomputedRegionMatches.has(notification.timestamp)) {
+  // 檢查預計算結果（只有多邊形通知才有預計算）
+  if (precomputedRegionMatches.has(notification.timestamp)) {
     return precomputedRegionMatches.get(notification.timestamp)!;
   }
   
-  // 否則即時計算
+  // 快速處理簡單情況
+  if (notification.codes.length === 0 && notification.Polygons.length === 0) {
+    return {
+      matchedRegions: new Set<number>(),
+      isNationwide: true,
+      isUnknownArea: false,
+      isOtherArea: false
+    };
+  }
+  
+  if (notification.codes.length > 0 && notification.Polygons.length === 0) {
+    // 只有代碼的簡單情況，快速處理
+    const result: RegionMatchResult = {
+      matchedRegions: new Set<number>(),
+      isNationwide: false,
+      isUnknownArea: false,
+      isOtherArea: false
+    };
+    
+    // 檢查代碼有效性
+    let hasValidCode = false;
+    notification.codes.forEach(code => {
+      for (const [, districts] of Object.entries(regionData)) {
+        for (const [, data] of Object.entries(districts)) {
+          if (data.code === code) {
+            result.matchedRegions.add(code);
+            hasValidCode = true;
+            break;
+          }
+        }
+        if (hasValidCode) break;
+      }
+    });
+    
+    if (!hasValidCode) {
+      result.isNationwide = true;
+    }
+    
+    return result;
+  }
+  
+  // 複雜情況（有多邊形）即時計算
   return computeNotificationRegions(notification, regionData, gridMatrix);
 }
 
