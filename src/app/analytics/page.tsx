@@ -112,17 +112,8 @@ function AnalyticsContent() {
     }
   }, [limitSetting, setLimitSetting]);
 
-  const analyticsData = useMemo((): AnalyticsData => {
-    if (!regionData || !gridMatrix) {
-      return {
-        regionStats: [],
-        totalNotifications: 0,
-        criticalNotifications: 0,
-        typeDistribution: {}
-      };
-    }
-
-    // 統計通知類型和緊急通知數量
+  // 緩存基本統計數據
+  const basicStats = useMemo(() => {
     const typeDistribution: { [type: string]: number } = {};
     let criticalCount = 0;
 
@@ -134,53 +125,74 @@ function AnalyticsContent() {
       }
     });
 
+    return { typeDistribution, criticalCount };
+  }, [filteredNotifications]);
+
+  // 緩存縣市統計數據
+  const cityStats = useMemo(() => {
+    if (!regionData || !gridMatrix || currentRegionFilter) {
+      return new Map();
+    }
+
+    const cityStatsMap = new Map<string, { count: number; types: { [type: string]: number }; criticalCount: number; districts: string[] }>();
+    
+    // 初始化所有縣市
+    Object.keys(regionData).forEach(city => {
+      cityStatsMap.set(city, {
+        count: 0,
+        types: {},
+        criticalCount: 0,
+        districts: Object.keys(regionData[city] || {})
+      });
+    });
+    
+    // 為每個縣市計算通知數量
+    Object.keys(regionData).forEach(city => {
+      // 獲取該縣市的通知
+      const cityNotifications = filterNotificationsByRegionName(
+        timeFilteredNotifications, 
+        city, 
+        regionData, 
+        gridMatrix
+      );
+      
+      const cityTypeDistribution: { [type: string]: number } = {};
+      let cityCriticalCount = 0;
+      
+      cityNotifications.forEach(notification => {
+        const notificationType = extractNotificationType(notification.title);
+        cityTypeDistribution[notificationType] = (cityTypeDistribution[notificationType] || 0) + 1;
+        if (notification.critical) {
+          cityCriticalCount++;
+        }
+      });
+      
+      cityStatsMap.set(city, {
+        count: cityNotifications.length,
+        types: cityTypeDistribution,
+        criticalCount: cityCriticalCount,
+        districts: Object.keys(regionData[city] || {})
+      });
+    });
+
+    return cityStatsMap;
+  }, [regionData, gridMatrix, timeFilteredNotifications, currentRegionFilter]);
+
+  const analyticsData = useMemo((): AnalyticsData => {
+    if (!regionData || !gridMatrix) {
+      return {
+        regionStats: [],
+        totalNotifications: 0,
+        criticalNotifications: 0,
+        typeDistribution: {}
+      };
+    }
+
     let regionStats: AnalyticsData['regionStats'];
     
     if (!currentRegionFilter) {
-      // 沒有地區篩選時，計算所有縣市的統計
+      // 沒有地區篩選時，使用緩存的縣市統計
       if (viewMode === 'city') {
-        // 使用時間篩選後的通知來計算各縣市統計
-        const cityStats = new Map<string, { count: number; types: { [type: string]: number }; criticalCount: number; districts: string[] }>();
-        
-        // 初始化所有縣市
-        Object.keys(regionData).forEach(city => {
-          cityStats.set(city, {
-            count: 0,
-            types: {},
-            criticalCount: 0,
-            districts: Object.keys(regionData[city] || {})
-          });
-        });
-        
-        // 為每個縣市計算通知數量
-        Object.keys(regionData).forEach(city => {
-          // 獲取該縣市的通知
-          const cityNotifications = filterNotificationsByRegionName(
-            timeFilteredNotifications, 
-            city, 
-            regionData, 
-            gridMatrix
-          );
-          
-          const cityTypeDistribution: { [type: string]: number } = {};
-          let cityCriticalCount = 0;
-          
-          cityNotifications.forEach(notification => {
-            const notificationType = extractNotificationType(notification.title);
-            cityTypeDistribution[notificationType] = (cityTypeDistribution[notificationType] || 0) + 1;
-            if (notification.critical) {
-              cityCriticalCount++;
-            }
-          });
-          
-          cityStats.set(city, {
-            count: cityNotifications.length,
-            types: cityTypeDistribution,
-            criticalCount: cityCriticalCount,
-            districts: Object.keys(regionData[city] || {})
-          });
-        });
-        
         // 轉換為數組並排序
         regionStats = Array.from(cityStats.entries())
           .map(([city, stats]) => ({
@@ -259,8 +271,8 @@ function AnalyticsContent() {
             code: 0,
             name: currentRegionFilter,
             count: filteredNotifications.length,
-            types: typeDistribution,
-            criticalCount: criticalCount
+            types: basicStats.typeDistribution,
+            criticalCount: basicStats.criticalCount
           }];
         }
       } else {
@@ -268,15 +280,13 @@ function AnalyticsContent() {
       }
     }
     
-    console.groupEnd();
-
     return {
       regionStats,
       totalNotifications: filteredNotifications.length,
-      criticalNotifications: criticalCount,
-      typeDistribution: typeDistribution
+      criticalNotifications: basicStats.criticalCount,
+      typeDistribution: basicStats.typeDistribution
     };
-  }, [regionData, gridMatrix, filteredNotifications, timeFilteredNotifications, viewMode, selectedCity, currentRegionFilter]);
+  }, [regionData, gridMatrix, filteredNotifications, viewMode, currentRegionFilter, cityStats, basicStats, timeFilteredNotifications]);
 
   if (loading) {
     return (

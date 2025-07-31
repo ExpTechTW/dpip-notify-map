@@ -261,11 +261,9 @@ export default function MapView({ notification }: MapViewProps) {
         map.current!.flyTo({
           center: [120.9605, 23.6978],
           zoom: window.innerWidth < 768 ? 6.5 : 7,
-          duration: 800,
+          duration: 300,
         });
 
-        // 延遲後聚焦到特定區域
-        setTimeout(() => {
           if (notificationBounds.type === 'codes') {
             const focusToCodes = () => {
               try {
@@ -296,7 +294,7 @@ export default function MapView({ notification }: MapViewProps) {
                     map.current!.fitBounds(bounds, { 
                       padding, 
                       maxZoom,
-                      duration: 1200
+                      duration: 300
                     });
                     return true;
                   }
@@ -312,7 +310,6 @@ export default function MapView({ notification }: MapViewProps) {
             // 直接使用預計算的邊界
             handlePolygonFocus(notificationBounds.bounds);
           }
-        }, 1000);
       };
 
       // 聚焦到多邊形區域
@@ -323,7 +320,7 @@ export default function MapView({ notification }: MapViewProps) {
           map.current!.fitBounds(bounds, { 
             padding,
             maxZoom,
-            duration: 1200
+            duration: 300
           });
         } catch (error) {
           console.warn('Failed to focus on polygon area:', error);
