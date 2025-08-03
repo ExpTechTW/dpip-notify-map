@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { useRegionData } from '@/hooks/useRegionData';
 import { TimeFilterComponent, useTimeFilter, TimeFilter } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
+import Image from 'next/image';
 
 
 function HomeContent() {
@@ -173,8 +174,17 @@ function HomeContent() {
       <header className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/50 px-4 sm:px-6 py-3 shadow-sm flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3 min-w-0">
-            <div className="p-2 bg-primary/10 rounded-lg flex-shrink-0">
-              <Shield className="w-5 h-5 text-primary" />
+            <div className="flex-shrink-0">
+            <Image 
+                src="https://raw.githubusercontent.com/ExpTechTW/DPIP/refs/heads/main/assets/DPIP.png" 
+                alt="DPIP Logo" 
+                className="rounded-md object-cover"
+                width={40}
+                height={40}
+                onClick={() => {
+                  window.open('https://github.com/ExpTechTW/DPIP', '_blank');
+                }}
+              />
             </div>
             <div>
               <h1 className="text-base sm:text-lg font-semibold text-foreground">DPIP 通知發送紀錄</h1>
