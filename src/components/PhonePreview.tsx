@@ -93,7 +93,7 @@ export default function PhonePreview({ notification }: PhonePreviewProps) {
                   {/* 通知區域 - 只在有通知時顯示，響應式 */}
                   {notification && (
                     <div className="absolute top-[160px] sm:top-[200px] md:top-[260px] lg:top-[320px] xl:top-[360px] left-3 right-3 sm:left-4 sm:right-4 md:left-5 md:right-5 z-20">
-                      <div className="bg-white/95 dark:bg-black/90 backdrop-blur-xl rounded-2xl p-3 sm:p-4 shadow-2xl">
+                      <div className="bg-white/80 dark:bg-black/65 backdrop-blur-xl rounded-2xl p-3 sm:p-4 shadow-2xl">
                         <div className="flex items-center space-x-3">
                           {/* 應用程式圖標 - Apple HIG 20pt 規範 */}
                           <div className="flex-shrink-0 relative w-8 h-8 sm:w-10 sm:h-10">
@@ -103,6 +103,9 @@ export default function PhonePreview({ notification }: PhonePreviewProps) {
                               fill
                               className="rounded-md object-cover"
                               sizes="(max-width: 640px) 32px, 40px"
+                              onClick={() => {
+                                window.open('https://github.com/ExpTechTW/DPIP', '_blank');
+                              }}
                             />
                           </div>
                           {/* 通知內容 - 響應式 */}
@@ -111,7 +114,7 @@ export default function PhonePreview({ notification }: PhonePreviewProps) {
                               <div className="text-gray-900 dark:text-gray-100 text-xs sm:text-sm font-semibold line-clamp-2 flex-1 pr-2">
                                 {notification.title}
                               </div>
-                              <div className="text-gray-500 dark:text-gray-400 text-[10px] sm:text-xs font-medium flex-shrink-0">
+                              <div className=" text-[10px] sm:text-xs font-medium flex-shrink-0">
                                 {getTimeAgo(notification.timestamp)}
                               </div>
                             </div>
@@ -131,7 +134,7 @@ export default function PhonePreview({ notification }: PhonePreviewProps) {
                   {/* 底部控制區域 - 響應式 */}
                   <div className="absolute bottom-0 left-0 right-0 z-20">
                     {/* 快捷功能圖標 - 真實 iOS 控制項 */}
-                    <div className="flex justify-between px-10 sm:px-12 lg:px-14 mb-8 sm:mb-10 lg:mb-12">
+                    <div className="flex justify-between px-10 sm:px-12 lg:px-14 mb-8 sm:mb-10 lg:mb-4">
                       <button className="w-12 h-12 sm:w-14 sm:h-14 bg-black/50 backdrop-blur-xl rounded-full flex items-center justify-center transition-all hover:bg-white/20 active:scale-95">
                         <Flashlight className="w-5 h-5 sm:w-6 sm:h-6 text-white/80" />
                       </button>
@@ -141,10 +144,10 @@ export default function PhonePreview({ notification }: PhonePreviewProps) {
                     </div>
                     
                     {/* 滑動解鎖提示 - 更細緻 */}
-                    <div className="text-center mb-6 sm:mb-8 lg:mb-10">
+                    <div className="text-center">
                       <div className="text-white/70 text-xs sm:text-sm mb-2">向上滑動以開啟</div>
                       <div className="flex justify-center">
-                        <div className="w-20 sm:w-24 lg:w-28 h-0.5 bg-white/40 rounded-full"></div>
+                        <div className="w-20 sm:w-24 lg:w-28 h-0.5 bg-white/40 rounded-full mb-2"></div>
                       </div>
                     </div>
                   </div>
