@@ -49,9 +49,13 @@ function extractNotificationType(title: string): string {
   if (title.includes('河川水位-注意')) return '⚠️ 防災資訊(河川水位-注意)';
   if (title.includes('停班停課')) return '🏫 防災資訊(停班停課)';
   if (title.includes('小區域有感地震')) return '🔔 地震報告 [小區域有感地震]';
+  if (title.includes('🔔 地震報告 ')) return '🔔 地震報告 [編號]';
   if (title.includes('強震監視器')) return '📡 強震監視器';
   if (title.includes('震度速報')) return '📨 震度速報';
   if (title.includes('山區暴雨')) return '⛈️ 山區暴雨';
+  if (title.includes('⚠️ 地震速報')) return '⚠️ 地震速報';
+  if (title.includes('🌊 海嘯消息')) return '🌊 海嘯消息';
+  console.log(title);
   return '其他';
 }
 
