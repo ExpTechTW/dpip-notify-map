@@ -98,13 +98,13 @@ export default function PhonePreview({ notification }: PhonePreviewProps) {
                           {/* 應用程式圖標 - Apple HIG 20pt 規範 */}
                           <div className="flex-shrink-0 relative w-8 h-8 sm:w-10 sm:h-10">
                             <Image 
-                              src="https://raw.githubusercontent.com/ExpTechTW/DPIP/refs/heads/main/assets/DPIP.png" 
+                              src="https://raw.githubusercontent.com/ExpTechTW/DPIP-Pocket/refs/heads/main/assets/DPIP.png" 
                               alt="DPIP Logo" 
                               fill
                               className="rounded-md object-cover"
                               sizes="(max-width: 640px) 32px, 40px"
                               onClick={() => {
-                                window.open('https://github.com/ExpTechTW/DPIP', '_blank');
+                                window.open('https://github.com/ExpTechTW/DPIP-Pocket', '_blank');
                               }}
                             />
                           </div>

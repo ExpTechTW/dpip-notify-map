@@ -176,13 +176,13 @@ function HomeContent() {
           <div className="flex items-center space-x-3 min-w-0">
             <div className="flex-shrink-0">
             <Image 
-                src="https://raw.githubusercontent.com/ExpTechTW/DPIP/refs/heads/main/assets/DPIP.png" 
+                src="https://raw.githubusercontent.com/ExpTechTW/DPIP-Pocket/refs/heads/main/assets/DPIP.png" 
                 alt="DPIP Logo" 
                 className="rounded-md object-cover"
                 width={40}
                 height={40}
                 onClick={() => {
-                  window.open('https://github.com/ExpTechTW/DPIP', '_blank');
+                  window.open('https://github.com/ExpTechTW/DPIP-Pocket', '_blank');
                 }}
               />
             </div>
