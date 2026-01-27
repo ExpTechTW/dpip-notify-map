@@ -7,7 +7,7 @@ COPY package*.json ./
 RUN bun i
 
 COPY . .
-
+ENV NODE_ENV=production
 RUN bun run build
 
 FROM oven/bun:1.3.4 AS runner
