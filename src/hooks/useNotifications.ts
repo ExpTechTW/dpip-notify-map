@@ -16,7 +16,7 @@ export function useNotifications(limit: LimitSetting = 'all') {
         setLoading(true);
         setError(null);
         
-        const response = await fetch(`https://api.exptech.dev/api/v2/notify/history?limit=${limit}`);
+        const response = await fetch(`https://api.core-tnn1.exptech.dev/api/v2/notify/history?limit=${limit}`);
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
@@ -51,7 +51,7 @@ export function useNotifications(limit: LimitSetting = 'all') {
         setLoading(true);
         setError(null);
         
-        const response = await fetch(`https://api.exptech.dev/api/v2/notify/history?limit=${limit}`);
+        const response = await fetch(`https://api.core-tnn1.exptech.dev/api/v2/notify/history?limit=${limit}`);
         const data: NotifyHistoryResponse = await response.json();
         
         if (data.success) {
