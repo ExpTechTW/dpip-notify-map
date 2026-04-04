@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 export type TimeFilter = 'recent1h' | 'recent3h' | 'recent6h' | 'recent12h' | 'recent24h' | 'all' | 'timeSlot';
 
@@ -17,139 +16,96 @@ export interface TimeFilterProps {
   compact?: boolean;
 }
 
+const TIME_OPTIONS: { value: TimeFilter; label: string }[] = [
+  { value: 'recent1h', label: '1h' },
+  { value: 'recent3h', label: '3h' },
+  { value: 'recent6h', label: '6h' },
+  { value: 'recent12h', label: '12h' },
+  { value: 'recent24h', label: '24h' },
+  { value: 'all', label: '全部' },
+  { value: 'timeSlot', label: '自定義' },
+];
+
+const DURATION_MAP: Record<string, number> = {
+  recent1h: 1 * 60 * 60 * 1000,
+  recent3h: 3 * 60 * 60 * 1000,
+  recent6h: 6 * 60 * 60 * 1000,
+  recent12h: 12 * 60 * 60 * 1000,
+  recent24h: 24 * 60 * 60 * 1000,
+};
+
+const VALID_FILTERS = new Set<string>(TIME_OPTIONS.map(o => o.value));
+
 export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
-  timeFilter,
-  startDate,
-  endDate,
-  onTimeFilterChange,
-  onStartDateChange,
-  onEndDateChange,
-  onApplyTimeSlot,
-  compact = false
+  timeFilter, startDate, endDate,
+  onTimeFilterChange, onStartDateChange, onEndDateChange, onApplyTimeSlot,
 }) => {
   return (
-    <div className={`space-y-2 ${compact ? 'text-xs' : ''}`}>
-      <div className="flex gap-1 bg-muted rounded-lg p-1 flex-wrap">
-        <Button
-          variant={timeFilter === 'recent1h' ? 'default' : 'ghost'}
-          size={compact ? 'sm' : 'default'}
-          onClick={() => onTimeFilterChange('recent1h')}
-          className={compact ? 'text-xs px-2 py-1 h-auto' : ''}
-        >
-          1小時
-        </Button>
-        <Button
-          variant={timeFilter === 'recent3h' ? 'default' : 'ghost'}
-          size={compact ? 'sm' : 'default'}
-          onClick={() => onTimeFilterChange('recent3h')}
-          className={compact ? 'text-xs px-2 py-1 h-auto' : ''}
-        >
-          3小時
-        </Button>
-        <Button
-          variant={timeFilter === 'recent6h' ? 'default' : 'ghost'}
-          size={compact ? 'sm' : 'default'}
-          onClick={() => onTimeFilterChange('recent6h')}
-          className={compact ? 'text-xs px-2 py-1 h-auto' : ''}
-        >
-          6小時
-        </Button>
-        <Button
-          variant={timeFilter === 'recent12h' ? 'default' : 'ghost'}
-          size={compact ? 'sm' : 'default'}
-          onClick={() => onTimeFilterChange('recent12h')}
-          className={compact ? 'text-xs px-2 py-1 h-auto' : ''}
-        >
-          12小時
-        </Button>
-        <Button
-          variant={timeFilter === 'recent24h' ? 'default' : 'ghost'}
-          size={compact ? 'sm' : 'default'}
-          onClick={() => onTimeFilterChange('recent24h')}
-          className={compact ? 'text-xs px-2 py-1 h-auto' : ''}
-        >
-          24小時
-        </Button>
-        <Button
-          variant={timeFilter === 'all' ? 'default' : 'ghost'}
-          size={compact ? 'sm' : 'default'}
-          onClick={() => onTimeFilterChange('all')}
-          className={compact ? 'text-xs px-2 py-1 h-auto' : ''}
-        >
-          全部區間
-        </Button>
-        <Button
-          variant={timeFilter === 'timeSlot' ? 'default' : 'ghost'}
-          size={compact ? 'sm' : 'default'}
-          onClick={() => onTimeFilterChange('timeSlot')}
-          className={compact ? 'text-xs px-2 py-1 h-auto' : ''}
-        >
-          自定義
-        </Button>
+    <div className="flex items-center gap-2">
+      <div className="flex items-center bg-muted/50 rounded-lg p-0.5 border border-border/50">
+        {TIME_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => onTimeFilterChange(opt.value)}
+            className={`px-2 py-1 text-xs font-medium rounded-md transition-all ${
+              timeFilter === opt.value
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
-      
+
       {timeFilter === 'timeSlot' && (
-        <div className={`flex items-center gap-2 ${compact ? 'text-xs' : ''}`}>
+        <div className="flex items-center gap-1.5">
           <input
-            type="date"
-            value={startDate}
+            type="date" value={startDate}
             onChange={(e) => onStartDateChange(e.target.value)}
-            className={`border rounded px-2 py-1 bg-background ${compact ? 'text-xs' : ''}`}
+            className="text-xs border border-border rounded-md px-2 py-1 bg-background"
           />
-          <span className={`text-muted-foreground ${compact ? 'text-xs' : ''}`}>至</span>
+          <span className="text-xs text-muted-foreground">-</span>
           <input
-            type="date"
-            value={endDate}
+            type="date" value={endDate}
             onChange={(e) => onEndDateChange(e.target.value)}
-            className={`border rounded px-2 py-1 bg-background ${compact ? 'text-xs' : ''}`}
+            className="text-xs border border-border rounded-md px-2 py-1 bg-background"
           />
-          <Button
-            size={compact ? 'sm' : 'default'}
-            variant="outline"
+          <button
             onClick={onApplyTimeSlot}
             disabled={!startDate || !endDate}
-            className={compact ? 'text-xs px-2 py-1 h-auto' : ''}
+            className="px-2 py-1 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
           >
             套用
-          </Button>
+          </button>
         </div>
       )}
     </div>
   );
 };
 
-// Hook for time filtering logic
 export const useTimeFilter = () => {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const pathname = usePathname();
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all'); // 首頁默認全部區間
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-
-  // 從 URL 讀取參數
   useEffect(() => {
-    const timeFilterParam = searchParams.get('timeFilter') as TimeFilter;
-    const startDateParam = searchParams.get('startDate');
-    const endDateParam = searchParams.get('endDate');
-
-    if (timeFilterParam && ['recent1h', 'recent3h', 'recent6h', 'recent12h', 'recent24h', 'all', 'timeSlot'].includes(timeFilterParam)) {
-      setTimeFilter(timeFilterParam);
-    }
-    if (startDateParam) setStartDate(startDateParam);
-    if (endDateParam) setEndDate(endDateParam);
+    const tf = searchParams.get('timeFilter');
+    if (tf && VALID_FILTERS.has(tf)) setTimeFilter(tf as TimeFilter);
+    const sd = searchParams.get('startDate');
+    const ed = searchParams.get('endDate');
+    if (sd) setStartDate(sd);
+    if (ed) setEndDate(ed);
   }, [searchParams]);
 
-  // 更新 URL 參數
-  const updateURL = (updates: { 
-    timeFilter?: TimeFilter | null; 
-    startDate?: string; 
+  const updateURL = useCallback((updates: {
+    timeFilter?: TimeFilter | null;
+    startDate?: string;
     endDate?: string;
-    preserveOthers?: boolean;
   }) => {
     const params = new URLSearchParams(window.location.search);
-    
+
     if (updates.timeFilter === null) {
       params.delete('timeFilter');
       params.delete('startDate');
@@ -161,97 +117,56 @@ export const useTimeFilter = () => {
         params.delete('endDate');
       }
     }
-    
+
     if (updates.startDate !== undefined) {
-      if (updates.startDate) {
-        params.set('startDate', updates.startDate);
-      } else {
-        params.delete('startDate');
-      }
+      updates.startDate ? params.set('startDate', updates.startDate) : params.delete('startDate');
     }
-    
     if (updates.endDate !== undefined) {
-      if (updates.endDate) {
-        params.set('endDate', updates.endDate);
-      } else {
-        params.delete('endDate');
-      }
+      updates.endDate ? params.set('endDate', updates.endDate) : params.delete('endDate');
     }
 
-    const newURL = `${pathname}?${params.toString()}`;
-    router.replace(newURL);
-  };
+    window.history.replaceState(null, '', `?${params.toString()}`);
+  }, []);
 
-  const handleTimeFilterChange = (filter: TimeFilter) => {
+  const handleTimeFilterChange = useCallback((filter: TimeFilter) => {
     setTimeFilter(filter);
     updateURL({ timeFilter: filter });
-  };
+  }, [updateURL]);
 
-  const handleStartDateChange = (date: string) => {
-    setStartDate(date);
-  };
-
-  const handleEndDateChange = (date: string) => {
-    setEndDate(date);
-  };
-
-  const handleApplyTimeSlot = () => {
+  const handleApplyTimeSlot = useCallback(() => {
     if (startDate && endDate) {
-      updateURL({ 
-        timeFilter: 'timeSlot',
-        startDate,
-        endDate
-      });
+      updateURL({ timeFilter: 'timeSlot', startDate, endDate });
     }
-  };
+  }, [startDate, endDate, updateURL]);
 
-
-  const memoizedFilterFunction = useCallback(
+  const filterNotificationsByTime = useCallback(
     <T extends { timestamp: number }>(notifications: T[]): T[] => {
       if (!notifications.length) return [];
-      
-      let filtered = notifications;
-      
-      if (timeFilter === 'recent1h') {
-        const now = Date.now();
-        const oneHourAgo = now - (1 * 60 * 60 * 1000);
-        filtered = filtered.filter(n => n.timestamp >= oneHourAgo);
-      } else if (timeFilter === 'recent3h') {
-        const now = Date.now();
-        const threeHoursAgo = now - (3 * 60 * 60 * 1000);
-        filtered = filtered.filter(n => n.timestamp >= threeHoursAgo);
-      } else if (timeFilter === 'recent6h') {
-        const now = Date.now();
-        const sixHoursAgo = now - (6 * 60 * 60 * 1000);
-        filtered = filtered.filter(n => n.timestamp >= sixHoursAgo);
-      } else if (timeFilter === 'recent12h') {
-        const now = Date.now();
-        const twelveHoursAgo = now - (12 * 60 * 60 * 1000);
-        filtered = filtered.filter(n => n.timestamp >= twelveHoursAgo);
-      } else if (timeFilter === 'recent24h') {
-        const now = Date.now();
-        const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
-        filtered = filtered.filter(n => n.timestamp >= twentyFourHoursAgo);
-      } else if (timeFilter === 'timeSlot' && startDate && endDate) {
-        const startTime = new Date(startDate).getTime();
-        const endTime = new Date(endDate + 'T23:59:59').getTime();
-        filtered = filtered.filter(n => n.timestamp >= startTime && n.timestamp <= endTime);
+
+      const duration = DURATION_MAP[timeFilter];
+      if (duration) {
+        const cutoff = Date.now() - duration;
+        return notifications.filter(n => n.timestamp >= cutoff);
       }
-      
-      return filtered;
+
+      if (timeFilter === 'timeSlot' && startDate && endDate) {
+        const start = new Date(startDate).getTime();
+        const end = new Date(endDate + 'T23:59:59').getTime();
+        return notifications.filter(n => n.timestamp >= start && n.timestamp <= end);
+      }
+
+      return notifications;
     },
     [timeFilter, startDate, endDate]
   );
 
   return {
-    timeFilter,
-    startDate,
-    endDate,
+    timeFilter, startDate, endDate,
     handleTimeFilterChange,
-    handleStartDateChange,
-    handleEndDateChange,
+    handleStartDateChange: setStartDate,
+    handleEndDateChange: setEndDate,
     handleApplyTimeSlot,
-    filterNotificationsByTime: memoizedFilterFunction,
+    filterNotificationsByTime,
     updateURL
   };
 };

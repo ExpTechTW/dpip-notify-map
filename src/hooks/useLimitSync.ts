@@ -1,51 +1,21 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useCallback } from 'react';
 import { useLimitContext } from '@/contexts/LimitContext';
 
 export function useLimitSync() {
   const { limitSetting, setLimitSetting } = useLimitContext();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const pathname = usePathname();
-
-  // 從 URL 同步 limit 設定（只在初始載入時執行一次）
-  useEffect(() => {
-    const limitParam = searchParams.get('limit');
-    if (limitParam) {
-      const limitValue = limitParam === 'all' ? 'all' : parseInt(limitParam, 10);
-      // 只有當值真的不同時才更新，避免無限循環
-      if (limitValue !== limitSetting && !isNaN(limitValue as number)) {
-        setLimitSetting(limitValue);
-      }
-    } else {
-      // 沒有 URL 參數時，確保使用預設值 100
-      if (limitSetting !== 100) {
-        setLimitSetting(100);
-      }
-    }
-  }, []); // 空依賴數組，只在初始載入時執行
 
   // 更新 limit 設定並同步 URL
   const updateLimit = useCallback((newLimit: 'all' | number) => {
-    // 防止重複設定相同值
-    if (newLimit === limitSetting) return;
-    
-    // 先更新狀態
+    // 更新 Context 狀態
     setLimitSetting(newLimit);
-    
-    // 然後更新 URL
-    const params = new URLSearchParams(searchParams.toString());
-    if (newLimit === 'all') {
-      params.set('limit', 'all');
-    } else {
-      params.set('limit', newLimit.toString());
-    }
-    
-    // 使用 replace 而不是 push 避免歷史記錄污染
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [limitSetting, setLimitSetting, router, searchParams]);
+
+    // 用 history.replaceState 更新網址，不觸發 Next.js 導航
+    const params = new URLSearchParams(window.location.search);
+    params.set('limit', newLimit.toString());
+    window.history.replaceState(null, '', `?${params.toString()}`);
+  }, [setLimitSetting]);
 
   return {
     limitSetting,

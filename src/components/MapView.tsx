@@ -4,14 +4,147 @@ import { useEffect, useRef, useMemo, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { NotificationRecord } from '@/types/notify';
+import { useRegionData, type RegionData } from '@/hooks/useRegionData';
 
 interface MapViewProps {
   notification: NotificationRecord | null;
 }
 
+const TAIWAN_CENTER: [number, number] = [120.9605, 23.6978];
+const CACHE_NAME = 'map-tiles-v1';
+const TAIWAN_OVERVIEW_PAUSE_MS = 600;
+
+function getInitialZoom() {
+  return typeof window !== 'undefined' && window.innerWidth < 768 ? 6.5 : 7;
+}
+
+function getPadding() {
+  return typeof window !== 'undefined' && window.innerWidth < 768 ? 30 : 60;
+}
+
+function isNarrowScreen() {
+  return typeof window !== 'undefined' && window.innerWidth < 768;
+}
+
+function boundsFromRegionCodes(regionData: RegionData, codes: number[]): maplibregl.LngLatBounds | null {
+  const want = new Set(codes);
+  const b = new maplibregl.LngLatBounds();
+  for (const districts of Object.values(regionData)) {
+    for (const { code, lon, lat } of Object.values(districts)) {
+      if (want.has(code)) b.extend([lon, lat]);
+    }
+  }
+  return b.isEmpty() ? null : b;
+}
+
+function ensureMinLngLatSpan(bounds: maplibregl.LngLatBounds, minDeg = 0.08): maplibregl.LngLatBounds {
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+  const lngSpan = ne.lng - sw.lng;
+  const latSpan = ne.lat - sw.lat;
+  if (lngSpan >= minDeg && latSpan >= minDeg) return bounds;
+  const c = bounds.getCenter();
+  const h = minDeg / 2;
+  return new maplibregl.LngLatBounds([c.lng - h, c.lat - h], [c.lng + h, c.lat + h]);
+}
+
+function extendBoundsFromPolygonFeatures(
+  features: GeoJSON.Feature[],
+  into: maplibregl.LngLatBounds
+) {
+  for (const f of features) {
+    const g = f.geometry;
+    if (!g) continue;
+    if (g.type === 'Polygon') {
+      g.coordinates[0]?.forEach(c => into.extend(c as [number, number]));
+    } else if (g.type === 'MultiPolygon') {
+      g.coordinates.forEach(p => p[0]?.forEach(c => into.extend(c as [number, number])));
+    }
+  }
+}
+
+/** 台灣全景 → moveend → idle → 停頓 → runZoomIn */
+function flyTaiwanOverviewThen(
+  m: maplibregl.Map,
+  isStale: () => boolean,
+  runZoomIn: () => void
+) {
+  m.flyTo({
+    center: TAIWAN_CENTER,
+    zoom: getInitialZoom(),
+    duration: 450,
+    padding: getPadding(),
+    essential: true,
+  });
+  m.once('moveend', () => {
+    if (isStale()) return;
+    m.once('idle', () => {
+      if (isStale()) return;
+      window.setTimeout(() => {
+        if (!isStale()) runZoomIn();
+      }, TAIWAN_OVERVIEW_PAUSE_MS);
+    });
+  });
+}
+
+function tryFitTownCodes(
+  m: maplibregl.Map,
+  codes: number[],
+  fitOpts: maplibregl.FitBoundsOptions
+): boolean {
+  try {
+    const features = m.querySourceFeatures('map', {
+      sourceLayer: 'town',
+      filter: ['in', ['get', 'CODE'], ['literal', codes]],
+    }) as GeoJSON.Feature[];
+    if (!features.length) return false;
+    const b = new maplibregl.LngLatBounds();
+    extendBoundsFromPolygonFeatures(features, b);
+    if (b.isEmpty()) return false;
+    m.fitBounds(b, fitOpts);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function tryFitTownCodesFromRegion(
+  m: maplibregl.Map,
+  regionData: RegionData,
+  codes: number[],
+  fitOpts: maplibregl.FitBoundsOptions
+): boolean {
+  const b = boundsFromRegionCodes(regionData, codes);
+  if (!b) return false;
+  m.fitBounds(ensureMinLngLatSpan(b), fitOpts);
+  return true;
+}
+
+// Cache API tiles 快取
+function transformRequest(url: string): { url: string } | undefined {
+  if (!url.includes('basemaps.cartocdn.com') && !url.includes('exptech.dev')) return undefined;
+
+  if (typeof caches !== 'undefined') {
+    caches.open(CACHE_NAME).then(cache => {
+      cache.match(url).then(cached => {
+        if (!cached) {
+          fetch(url).then(res => {
+            if (res.ok) cache.put(url, res);
+          }).catch(() => {});
+        }
+      });
+    }).catch(() => {});
+  }
+
+  return { url };
+}
+
 export default function MapView({ notification }: MapViewProps) {
+  const { regionData } = useRegionData();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
+  const versionRef = useRef(0);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -21,13 +154,15 @@ export default function MapView({ notification }: MapViewProps) {
       style: {
         version: 8,
         sources: {
-          'osm-tiles': {
+          'carto-dark': {
             type: 'raster',
             tiles: [
-              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+              'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+              'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
             ],
             tileSize: 256,
-            attribution: '© OpenStreetMap contributors',
+            attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
           },
           map: {
             type: 'vector',
@@ -35,390 +170,182 @@ export default function MapView({ notification }: MapViewProps) {
           },
         },
         layers: [
+          { id: 'carto-dark', type: 'raster', source: 'carto-dark' },
           {
-            id: 'osm-tiles',
-            type: 'raster',
-            source: 'osm-tiles',
-            paint: {
-              'raster-brightness-min': 0,
-              'raster-brightness-max': 0.3,
-              'raster-contrast': 0.3,
-              'raster-saturation': -0.5,
-            },
+            id: 'county-fill', type: 'fill', source: 'map', 'source-layer': 'city',
+            paint: { 'fill-color': 'transparent' },
           },
           {
-            'id': 'county-outline',
-            'type': 'line',
-            'source': 'map',
-            'source-layer': 'city',
-            'paint': { 
-              'line-color': '#64748b', 
-              'line-width': 1.5,
-              'line-opacity': 0.8
-            },
+            id: 'county-outline', type: 'line', source: 'map', 'source-layer': 'city',
+            paint: { 'line-color': '#64748b', 'line-width': 1.8, 'line-opacity': 0.6 },
           },
           {
-            'id': 'town-outline',
-            'type': 'line',
-            'source': 'map',
-            'source-layer': 'town',
-            'paint': { 
-              'line-color': '#475569', 
-              'line-width': 0.8,
-              'line-opacity': 0.6
-            },
-          }
+            id: 'town-outline', type: 'line', source: 'map', 'source-layer': 'town',
+            paint: { 'line-color': '#475569', 'line-width': 0.5, 'line-opacity': 0.35 },
+          },
         ],
       },
-      center: [120.9605, 23.6978], // 台灣中心
-      zoom: window.innerWidth < 768 ? 6.5 : 7, // iPhone 較小螢幕縮小初始縮放
+      center: TAIWAN_CENTER,
+      zoom: getInitialZoom(),
+      maxBounds: [[115, 20], [127, 27.5]],
+      minZoom: 5,
+      maxZoom: 14,
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchZoomRotate: true,
+      transformRequest,
     });
 
-    map.current.addControl(new maplibregl.NavigationControl(), 'top-right');
+    map.current.touchZoomRotate.disableRotation();
+    map.current.keyboard.disableRotation();
+    map.current.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    map.current.on('error', () => {});
 
-    map.current.on('error', () => {
-      void 0
-    });
-
-    return () => {
-      map.current?.remove();
-    };
+    return () => { map.current?.remove(); };
   }, []);
 
-  // 緩存處理過的 GeoJSON 數據
   const processedGeoJSON = useMemo(() => {
     if (!notification?.Polygons?.length) return null;
 
-    const features = notification.Polygons.filter((polygon) => {
-      // 檢查是否是 GeoJSON Feature 格式
-      if ('type' in polygon && polygon.type === 'Feature' && 'geometry' in polygon && polygon.geometry) {
-        return polygon.geometry.coordinates && Array.isArray(polygon.geometry.coordinates);
-      }
-      // 檢查是否是直接的座標格式
-      if ('coordinates' in polygon) {
-        return polygon.coordinates && Array.isArray(polygon.coordinates);
-      }
+    const features = notification.Polygons.filter(p => {
+      if ('type' in p && p.type === 'Feature' && 'geometry' in p && p.geometry)
+        return Array.isArray(p.geometry.coordinates);
+      if ('coordinates' in p) return Array.isArray(p.coordinates);
       return false;
-    }).map((polygon, index) => {
-      // 如果是 GeoJSON Feature 格式，直接使用
-      if ('type' in polygon && polygon.type === 'Feature' && 'geometry' in polygon && polygon.geometry) {
-        return {
-          ...polygon,
-          properties: {
-            ...polygon.properties,
-            id: index,
-            notification: notification.title,
-          }
-        };
-      }
-      // 如果是直接座標格式，轉換為 GeoJSON Feature
-      if ('coordinates' in polygon) {
-        return {
-          type: 'Feature' as const,
-          properties: {
-            id: index,
-            notification: notification.title,
-          },
-          geometry: {
-            type: 'Polygon' as const,
-            coordinates: polygon.coordinates,
-          },
-        };
-      }
-      // 預設情況
-      return {
-        type: 'Feature' as const,
-        properties: {
-          id: index,
-          notification: notification.title,
-        },
-        geometry: {
-          type: 'Polygon' as const,
-          coordinates: [],
-        },
-      };
+    }).map((p, i) => {
+      if ('type' in p && p.type === 'Feature' && 'geometry' in p && p.geometry)
+        return { ...p, properties: { ...p.properties, id: i } };
+      if ('coordinates' in p)
+        return { type: 'Feature' as const, properties: { id: i }, geometry: { type: 'Polygon' as const, coordinates: p.coordinates } };
+      return { type: 'Feature' as const, properties: { id: i }, geometry: { type: 'Polygon' as const, coordinates: [] } };
     });
 
-    if (features.length === 0) return null;
-
-    return {
-      type: 'FeatureCollection' as const,
-      features,
-    };
+    return features.length ? { type: 'FeatureCollection' as const, features } : null;
   }, [notification?.Polygons, notification?.title]);
 
-  // 緩存邊界計算
   const notificationBounds = useMemo(() => {
     if (!notification) return null;
-
-    // 優先使用 codes 邊界
-    if (notification.codes && notification.codes.length > 0) {
-      return { type: 'codes' as const, codes: notification.codes };
-    }
-
-    // 使用多邊形邊界
-    if (notification.Polygons && notification.Polygons.length > 0) {
+    if (notification.codes?.length) return { type: 'codes' as const, codes: notification.codes };
+    if (notification.Polygons?.length) {
       const bounds = new maplibregl.LngLatBounds();
-      notification.Polygons.forEach((polygon) => {
-        let coordinates: number[][][];
-        if ('coordinates' in polygon) {
-          coordinates = polygon.coordinates;
-        } else if (polygon.geometry && 'coordinates' in polygon.geometry) {
-          coordinates = polygon.geometry.coordinates;
-        } else {
-          return;
-        }
-        
-        coordinates.forEach(ring => {
-          ring.forEach(coord => {
-            if (coord && coord.length >= 2) {
-              bounds.extend([coord[0], coord[1]]);
-            }
-          });
-        });
+      notification.Polygons.forEach(p => {
+        const coords = 'coordinates' in p ? p.coordinates : p.geometry?.coordinates;
+        if (!coords) return;
+        coords.forEach(ring => ring.forEach(c => { if (c?.length >= 2) bounds.extend([c[0], c[1]]); }));
       });
-      
-      if (!bounds.isEmpty()) {
-        return { type: 'polygon' as const, bounds };
-      }
+      if (!bounds.isEmpty()) return { type: 'polygon' as const, bounds };
     }
-
     return null;
   }, [notification]);
 
-  // 清除地圖圖層的函數
-  const clearMapLayers = useCallback(() => {
-    if (!map.current) return;
-
-    // 清除之前的多邊形
-    if (map.current.getSource('notification-polygons')) {
-      map.current.removeLayer('notification-polygons-fill');
-      map.current.removeLayer('notification-polygons-line');
-      map.current.removeSource('notification-polygons');
-    }
-
-    // 清除之前的 codes 顯示
-    try {
-      if (map.current.getLayer('notification-codes-fill')) {
-        map.current.removeLayer('notification-codes-fill');
-      }
-      if (map.current.getLayer('notification-codes-line')) {
-        map.current.removeLayer('notification-codes-line');
-      }
-    } catch {
-      // 忽略移除圖層時的錯誤
-    }
+  const clearLayers = useCallback(() => {
+    const m = map.current;
+    if (!m) return;
+    ['notification-polygons-fill', 'notification-polygons-line', 'notification-codes-fill', 'notification-codes-line'].forEach(id => {
+      try { if (m.getLayer(id)) m.removeLayer(id); } catch {}
+    });
+    try { if (m.getSource('notification-polygons')) m.removeSource('notification-polygons'); } catch {}
   }, []);
+
+  const applyNotification = useCallback((
+    n: NotificationRecord,
+    bounds: typeof notificationBounds,
+    geoJSON: typeof processedGeoJSON,
+    version: number,
+    regions: RegionData | null
+  ) => {
+    const m = map.current;
+    if (!m || versionRef.current !== version) return;
+
+    m.stop();
+    clearLayers();
+
+    if (n.codes?.length) {
+      try {
+        m.addLayer({
+          id: 'notification-codes-fill', type: 'fill', source: 'map', 'source-layer': 'town',
+          filter: ['in', ['get', 'CODE'], ['literal', n.codes]],
+          paint: { 'fill-color': n.critical ? '#f87171' : '#60a5fa', 'fill-opacity': 0.4 },
+        });
+        m.addLayer({
+          id: 'notification-codes-line', type: 'line', source: 'map', 'source-layer': 'town',
+          filter: ['in', ['get', 'CODE'], ['literal', n.codes]],
+          paint: {
+            'line-color': n.critical ? '#ef4444' : '#3b82f6',
+            'line-width': 2.5,
+            'line-opacity': 0.85,
+          },
+        });
+      } catch {}
+    }
+
+    if (geoJSON && versionRef.current === version) {
+      m.addSource('notification-polygons', { type: 'geojson', data: geoJSON });
+      m.addLayer({
+        id: 'notification-polygons-fill', type: 'fill', source: 'notification-polygons',
+        paint: { 'fill-color': n.critical ? '#ef4444' : '#3b82f6', 'fill-opacity': 0.2 },
+      });
+      m.addLayer({
+        id: 'notification-polygons-line', type: 'line', source: 'notification-polygons',
+        paint: { 'line-color': n.critical ? '#dc2626' : '#2563eb', 'line-width': 2 },
+      });
+    }
+
+    if (!bounds || versionRef.current !== version) return;
+
+    const stale = () => versionRef.current !== version || !map.current;
+
+    const codesFit: maplibregl.FitBoundsOptions = {
+      padding: getPadding(),
+      maxZoom: isNarrowScreen() ? 10 : 11,
+      duration: 550,
+      essential: true,
+    };
+    const polygonFit: maplibregl.FitBoundsOptions = {
+      padding: getPadding(),
+      maxZoom: isNarrowScreen() ? 11 : 12,
+      duration: 400,
+      essential: true,
+    };
+
+    if (bounds.type === 'codes') {
+      flyTaiwanOverviewThen(m, stale, () => {
+        const mm = map.current;
+        if (!mm) return;
+        if (!tryFitTownCodes(mm, bounds.codes, codesFit) && regions) {
+          tryFitTownCodesFromRegion(mm, regions, bounds.codes, codesFit);
+        }
+      });
+    } else if (bounds.type === 'polygon') {
+      const target = bounds.bounds;
+      flyTaiwanOverviewThen(m, stale, () => {
+        map.current?.fitBounds(target, polygonFit);
+      });
+    }
+  }, [clearLayers]);
 
   useEffect(() => {
     if (!map.current || !notification) return;
-    
-    const processNotification = () => {
-      if (!map.current) return;
 
-      clearMapLayers();
+    const version = ++versionRef.current;
+    map.current.stop();
 
-      // 處理 codes 顯示
-      const handleCodesDisplay = () => {
-        if (notification.codes && notification.codes.length > 0) {
-          try {
-            // 添加 codes 高亮圖層
-            map.current!.addLayer({
-              id: 'notification-codes-fill',
-              type: 'fill',
-              source: 'map',
-              'source-layer': 'town',
-              filter: ['in', ['get', 'CODE'], ['literal', notification.codes]],
-              paint: {
-                'fill-color': '#60a5fa',
-                'fill-opacity': 0.5,
-              },
-            });
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
-            map.current!.addLayer({
-              id: 'notification-codes-line',
-              type: 'line',
-              source: 'map',
-              'source-layer': 'town',
-              filter: ['in', ['get', 'CODE'], ['literal', notification.codes]],
-              paint: {
-                'line-color': '#3b82f6',
-                'line-width': 2.5,
-                'line-opacity': 0.8,
-              },
-            });
-          } catch (error) {
-            console.error('Error adding codes layers:', error);
-          }
-        }
-      };
+    debounceTimer.current = setTimeout(() => {
+      if (versionRef.current !== version || !map.current) return;
 
-      // 處理聚焦邏輯 - 使用緩存的邊界數據
-      const handleFocus = () => {
-        if (!notificationBounds) return;
+      const run = () => applyNotification(notification, notificationBounds, processedGeoJSON, version, regionData);
 
-        // 先縮小到台灣全景
-        map.current!.flyTo({
-          center: [120.9605, 23.6978],
-          zoom: window.innerWidth < 768 ? 6.5 : 7,
-          duration: 300,
-        });
+      if (map.current.isStyleLoaded()) run();
+      else map.current.once('load', run);
+    }, 30);
 
-          if (notificationBounds.type === 'codes') {
-            const focusToCodes = () => {
-              try {
-                const features = map.current!.querySourceFeatures('map', {
-                  sourceLayer: 'town',
-                  filter: ['in', ['get', 'CODE'], ['literal', notificationBounds.codes]]
-                });
-                
-                if (features.length > 0) {
-                  const bounds = new maplibregl.LngLatBounds();
-                  features.forEach(feature => {
-                    if (feature.geometry.type === 'Polygon') {
-                      feature.geometry.coordinates[0].forEach(coord => {
-                        bounds.extend(coord as [number, number]);
-                      });
-                    } else if (feature.geometry.type === 'MultiPolygon') {
-                      feature.geometry.coordinates.forEach(polygon => {
-                        polygon[0].forEach(coord => {
-                          bounds.extend(coord as [number, number]);
-                        });
-                      });
-                    }
-                  });
-                  
-                  if (!bounds.isEmpty()) {
-                    const padding = window.innerWidth < 768 ? 30 : 60;
-                    const maxZoom = window.innerWidth < 768 ? 10 : 11;
-                    map.current!.fitBounds(bounds, { 
-                      padding, 
-                      maxZoom,
-                      duration: 300
-                    });
-                    return true;
-                  }
-                }
-              } catch (error) {
-                console.warn('Failed to focus on codes area:', error);
-              }
-              return false;
-            };
-            
-            focusToCodes();
-          } else if (notificationBounds.type === 'polygon' && notificationBounds.bounds) {
-            // 直接使用預計算的邊界
-            handlePolygonFocus(notificationBounds.bounds);
-          }
-      };
-
-      // 聚焦到多邊形區域
-      const handlePolygonFocus = (bounds: maplibregl.LngLatBounds) => {
-        try {
-          const padding = window.innerWidth < 768 ? 30 : 60;
-          const maxZoom = window.innerWidth < 768 ? 11 : 12;
-          map.current!.fitBounds(bounds, { 
-            padding,
-            maxZoom,
-            duration: 300
-          });
-        } catch (error) {
-          console.warn('Failed to focus on polygon area:', error);
-        }
-      };
-
-      handleCodesDisplay();
-      handleFocus();
-
-      if (!processedGeoJSON) return;
-
-      map.current.addSource('notification-polygons', {
-        type: 'geojson',
-        data: processedGeoJSON,
-      });
-
-      map.current.addLayer({
-        id: 'notification-polygons-fill',
-        type: 'fill',
-        source: 'notification-polygons',
-        paint: {
-          'fill-color': notification.critical ? '#ef4444' : '#3b82f6',
-          'fill-opacity': 0.3,
-        },
-      });
-
-      map.current.addLayer({
-        id: 'notification-polygons-line',
-        type: 'line',
-        source: 'notification-polygons',
-        paint: {
-          'line-color': notification.critical ? '#dc2626' : '#2563eb',
-          'line-width': 2,
-        },
-      });
-
-
-      // 添加點擊事件
-      const clickHandler = (e: maplibregl.MapMouseEvent) => {
-        const features = map.current!.queryRenderedFeatures(e.point, {
-          layers: ['notification-polygons-fill'],
-        });
-
-        if (features.length > 0) {
-          new maplibregl.Popup()
-            .setLngLat(e.lngLat)
-            .setHTML(`
-              <div class="p-2">
-                <h4 class="font-semibold text-sm">${notification.title}</h4>
-                <p class="text-xs text-gray-600 mt-1">${notification.body}</p>
-                <p class="text-xs text-gray-500 mt-2">
-                  ${new Date(notification.timestamp).toLocaleString('zh-TW')}
-                </p>
-              </div>
-            `)
-            .addTo(map.current!);
-        }
-      };
-
-      map.current.on('click', 'notification-polygons-fill', clickHandler);
-
-      // 鼠標樣式
-      map.current.on('mouseenter', 'notification-polygons-fill', () => {
-        map.current!.getCanvas().style.cursor = 'pointer';
-      });
-
-      map.current.on('mouseleave', 'notification-polygons-fill', () => {
-        map.current!.getCanvas().style.cursor = '';
-      });
-
-      return () => {
-        if (map.current) {
-          map.current.off('click', 'notification-polygons-fill', clickHandler);
-          
-          // 清除 codes 圖層
-          try {
-            if (map.current.getLayer('notification-codes-fill')) {
-              map.current.removeLayer('notification-codes-fill');
-            }
-            if (map.current.getLayer('notification-codes-line')) {
-              map.current.removeLayer('notification-codes-line');
-            }
-          } catch {
-            // 忽略移除圖層時的錯誤
-          }
-        }
-      };
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      clearLayers();
     };
-    
-    // 確保地圖已載入
-    if (!map.current.loaded()) {
-      map.current.once('load', () => {
-        processNotification();
-      });
-    } else {
-      processNotification();
-    }
-  }, [notification, clearMapLayers, notificationBounds, processedGeoJSON]);
+  }, [notification, notificationBounds, processedGeoJSON, regionData, applyNotification, clearLayers]);
 
   return (
     <div className="h-full relative md:rounded-lg overflow-hidden">
@@ -426,28 +353,15 @@ export default function MapView({ notification }: MapViewProps) {
       {!notification && (
         <div className="absolute inset-0 bg-background/95 backdrop-blur-sm flex items-center justify-center">
           <div className="text-center max-w-md mx-auto p-8">
-            <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
-              <svg className="w-10 h-10 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">地圖視圖</h3>
-            <p className="text-muted-foreground text-sm leading-relaxed">
-              選擇左側的通知項目以在地圖上查看相關的地理範圍與詳細資訊
-            </p>
+            <p className="text-sm text-muted-foreground">選擇通知以查看地理範圍</p>
           </div>
         </div>
       )}
-      
-      {/* 地圖控制面板 */}
-      <div className="absolute top-4 left-4 z-10">
-        <div className="bg-background/95 backdrop-blur-sm border border-border/50 rounded-lg p-3 shadow-sm">
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#60a5fa' }}></div>
-            <span>通知範圍</span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
