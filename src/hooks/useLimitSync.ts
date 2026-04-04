@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useCallback } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useLimitContext } from '@/contexts/LimitContext';
 
 export function useLimitSync() {
   const { limitSetting, setLimitSetting } = useLimitContext();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const pathname = usePathname();
 
   // 從 URL 同步 limit 設定（只在初始載入時執行一次）
   useEffect(() => {
@@ -43,7 +44,6 @@ export function useLimitSync() {
     }
     
     // 使用 replace 而不是 push 避免歷史記錄污染
-    const pathname = window.location.pathname;
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   }, [limitSetting, setLimitSetting, router, searchParams]);
 

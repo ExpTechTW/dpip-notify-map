@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 
 export type TimeFilter = 'recent1h' | 'recent3h' | 'recent6h' | 'recent12h' | 'recent24h' | 'all' | 'timeSlot';
 
@@ -122,7 +122,8 @@ export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
 export const useTimeFilter = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+  const pathname = usePathname();
+
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all'); // 首頁默認全部區間
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -177,7 +178,7 @@ export const useTimeFilter = () => {
       }
     }
 
-    const newURL = `${window.location.pathname}?${params.toString()}`;
+    const newURL = `${pathname}?${params.toString()}`;
     router.replace(newURL);
   };
 
