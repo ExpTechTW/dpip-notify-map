@@ -13,7 +13,6 @@ import { RefreshCcw, AlertTriangle, BarChart3, Filter, X, ChevronDown } from 'lu
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ThemeToggle } from '@/components/theme-toggle';
 import Link from 'next/link';
-import { useRegionData } from '@/hooks/useRegionData';
 import { TimeFilterComponent, useTimeFilter, TimeFilter } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
 import Image from 'next/image';
@@ -31,7 +30,6 @@ function HomeContent() {
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  const { regionData } = useRegionData();
   const {
     timeFilter, startDate, endDate,
     handleTimeFilterChange, handleStartDateChange, handleEndDateChange, handleApplyTimeSlot
@@ -39,6 +37,7 @@ function HomeContent() {
 
   const {
     finalNotifications: notifications,
+    regionData,
     timeFilteredNotifications,
     loading, error, refetch
   } = useFilteredNotifications(regionFilter);

@@ -17,9 +17,7 @@ export function LoadingSpinner({
 }: LoadingSpinnerProps) {
   const content = (
     <div className="flex flex-col items-center gap-4 text-center">
-      <div className="relative flex items-center justify-center w-14 h-14">
-        <div className="absolute inset-0 rounded-full border-2 border-primary/20" />
-        <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-primary animate-spin" />
+      <div className="flex items-center justify-center w-14 h-14 rounded-full border-2 border-primary/25">
         <Loader2 className={`${SIZE_MAP[size]} animate-spin text-primary`} />
       </div>
       <div>

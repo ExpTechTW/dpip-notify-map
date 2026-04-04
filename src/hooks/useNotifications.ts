@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { NotifyHistoryResponse, NotificationRecord } from '@/types/notify';
-
-type LimitSetting = 'all' | number;
+import type { LimitSetting } from '@/contexts/LimitContext';
 
 export function useNotifications(limit: LimitSetting = 'all') {
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);

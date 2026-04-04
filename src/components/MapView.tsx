@@ -63,7 +63,6 @@ function extendBoundsFromPolygonFeatures(
   }
 }
 
-/** 台灣全景 → moveend → idle → 停頓 → runZoomIn */
 function flyTaiwanOverviewThen(
   m: maplibregl.Map,
   isStale: () => boolean,
@@ -221,7 +220,7 @@ export default function MapView({ notification }: MapViewProps) {
     });
 
     return features.length ? { type: 'FeatureCollection' as const, features } : null;
-  }, [notification?.Polygons, notification?.title]);
+  }, [notification?.Polygons]);
 
   const notificationBounds = useMemo(() => {
     if (!notification) return null;

@@ -119,10 +119,12 @@ export const useTimeFilter = () => {
     }
 
     if (updates.startDate !== undefined) {
-      updates.startDate ? params.set('startDate', updates.startDate) : params.delete('startDate');
+      if (updates.startDate) params.set('startDate', updates.startDate);
+      else params.delete('startDate');
     }
     if (updates.endDate !== undefined) {
-      updates.endDate ? params.set('endDate', updates.endDate) : params.delete('endDate');
+      if (updates.endDate) params.set('endDate', updates.endDate);
+      else params.delete('endDate');
     }
 
     window.history.replaceState(null, '', `?${params.toString()}`);

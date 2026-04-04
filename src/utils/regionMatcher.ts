@@ -5,7 +5,6 @@ const polygonToTownsCache = new Map<string, Map<number, number>>();
 
 // 預計算所有通知的地區匹配結果
 const precomputedRegionMatches = new Map<number, RegionMatchResult>();
-let isPrecomputationComplete = false;
 
 // 取得多邊形邊界
 function getPolygonBounds(coordinates: number[][][]) {
@@ -140,21 +139,6 @@ function findNearestGridPoint(
   return nearestTownCode;
 }
 
-// 從標題提取通知類型
-function extractNotificationType(title: string): string {
-  if (title.includes('地震')) return '地震';
-  if (title.includes('海嘯')) return '海嘯';
-  if (title.includes('火山')) return '火山';
-  if (title.includes('颱風')) return '颱風';
-  if (title.includes('豪雨') || title.includes('淹水')) return '天氣';
-  if (title.includes('核子')) return '核子事故';
-  if (title.includes('空襲')) return '空襲';
-  if (title.includes('飛彈')) return '飛彈';
-  if (title.includes('測試')) return '測試';
-  if (title.includes('演習')) return '演習';
-  return '其他';
-}
-
 export interface RegionMatchResult {
   matchedRegions: Set<number>; // 匹配到的地區代碼
   isNationwide: boolean; // 是否為全國廣播
@@ -162,33 +146,20 @@ export interface RegionMatchResult {
   isOtherArea: boolean; // 是否為其他地區
 }
 
-// 簡化的預計算 - 只預計算複雜的多邊形通知
 export function precomputeAllRegionMatches(
   notifications: NotificationRecord[],
   regionData: Record<string, Record<string, { code: number; lat: number; lon: number; site: number; area: string }>>,
   gridMatrix: Map<string, number>
 ): Promise<void> {
-  return new Promise((resolve) => {
-    console.log('🔄 開始簡化預計算...');
-    const startTime = performance.now();
-    
-    precomputedRegionMatches.clear();
-    
-    // 只預計算有多邊形的複雜通知（約5-10%的通知）
-    const polygonNotifications = notifications.filter(n => n.Polygons.length > 0);
-    console.log(`📊 需要預計算的多邊形通知: ${polygonNotifications.length}/${notifications.length}`);
-    
-    // 同步處理，因為數量已經大幅減少
-    polygonNotifications.forEach(notification => {
-      const result = computeNotificationRegions(notification, regionData, gridMatrix);
-      precomputedRegionMatches.set(notification.timestamp, result);
-    });
-    
-    isPrecomputationComplete = true;
-    const endTime = performance.now();
-    console.log(`✅ 簡化預計算完成！耗時 ${(endTime - startTime).toFixed(2)}ms`);
-    resolve();
-  });
+  precomputedRegionMatches.clear();
+  for (const notification of notifications) {
+    if (notification.Polygons.length === 0) continue;
+    precomputedRegionMatches.set(
+      notification.timestamp,
+      computeNotificationRegions(notification, regionData, gridMatrix)
+    );
+  }
+  return Promise.resolve();
 }
 
 // 內部計算函數（不使用快取）
@@ -313,12 +284,10 @@ function computeNotificationRegions(
   return result;
 }
 
-// 統一的地區匹配邏輯（簡化版）
 export function matchNotificationToRegions(
   notification: NotificationRecord,
   regionData: Record<string, Record<string, { code: number; lat: number; lon: number; site: number; area: string }>>,
-  gridMatrix: Map<string, number>,
-  debug: boolean = false
+  gridMatrix: Map<string, number>
 ): RegionMatchResult {
   // 檢查預計算結果（只有多邊形通知才有預計算）
   if (precomputedRegionMatches.has(notification.timestamp)) {
@@ -370,19 +339,6 @@ export function matchNotificationToRegions(
   return computeNotificationRegions(notification, regionData, gridMatrix);
 }
 
-// 清理快取的函數（可選）
-export function clearRegionMatcherCache() {
-  polygonToTownsCache.clear();
-  precomputedRegionMatches.clear();
-  isPrecomputationComplete = false;
-}
-
-// 檢查是否已完成預計算
-export function isRegionMatchesPrecomputed(): boolean {
-  return isPrecomputationComplete;
-}
-
-// 根據地區名稱篩選通知（使用預計算結果）
 export function filterNotificationsByRegionName(
   notifications: NotificationRecord[],
   targetRegion: string,
@@ -467,5 +423,3 @@ export function filterNotificationsByRegionName(
     
   return matchedNotifications;
 }
-
-export { extractNotificationType };

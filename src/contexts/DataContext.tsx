@@ -9,25 +9,16 @@ import type { NotificationRecord } from '@/types/notify';
 import type { RegionData } from '@/hooks/useRegionData';
 
 interface DataContextType {
-  // 通知資料
   notifications: NotificationRecord[];
   notificationsLoading: boolean;
   notificationsError: string | null;
-  
-  // 地區資料
   regionData: RegionData | null;
   gridMatrix: Map<string, number> | null;
   regionDataLoading: boolean;
   regionDataError: string | null;
-  
-  // 預計算狀態
   precomputeCompleted: boolean;
   precomputeLoading: boolean;
-  
-  // 統合狀態
   isDataReady: boolean;
-  
-  // 重新載入功能
   refetchNotifications: () => void;
 }
 
@@ -44,12 +35,9 @@ export function useDataContext() {
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [precomputeCompleted, setPrecomputeCompleted] = useState(false);
   const [precomputeLoading, setPrecomputeLoading] = useState(false);
-  const [isClient, setIsClient] = useState(false);
-  
-  // 使用 LimitContext 的設定
+
   const { limitSetting } = useLimitContext();
-  
-  // 使用現有的 hooks，根據 limitSetting 載入通知
+
   const {
     notifications,
     loading: notificationsLoading,
@@ -63,18 +51,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     loading: regionDataLoading,
     error: regionDataError
   } = useRegionData();
-  
-  // 檢測客戶端環境
+
   useEffect(() => {
-    setIsClient(true);
-  }, []);
-  
-  // 執行簡化的預計算（只在客戶端執行）
-  useEffect(() => {
-    if (isClient && notifications.length > 0 && regionData && gridMatrix && !precomputeCompleted && !precomputeLoading) {
+    if (
+      notifications.length > 0 &&
+      regionData &&
+      gridMatrix &&
+      !precomputeCompleted &&
+      !precomputeLoading
+    ) {
       setPrecomputeLoading(true);
-      
-      // 簡化預計算現在是同步的，速度極快
       precomputeAllRegionMatches(notifications, regionData, gridMatrix)
         .then(() => {
           setPrecomputeCompleted(true);
@@ -85,21 +71,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           setPrecomputeLoading(false);
         });
     }
-  }, [isClient, notifications, regionData, gridMatrix, precomputeCompleted, precomputeLoading]);
-  
-  // 當通知資料重新載入時，重置預計算狀態
+  }, [notifications, regionData, gridMatrix, precomputeCompleted, precomputeLoading]);
+
   useEffect(() => {
     setPrecomputeCompleted(false);
   }, [notifications]);
-  
-  const isDataReady = isClient &&
-                     !notificationsLoading && 
-                     !regionDataLoading && 
-                     !precomputeLoading && 
-                     precomputeCompleted &&
-                     notifications.length > 0 &&
-                     regionData !== null &&
-                     gridMatrix !== null;
+
+  const isDataReady =
+    !notificationsLoading &&
+    !regionDataLoading &&
+    !precomputeLoading &&
+    precomputeCompleted &&
+    notifications.length > 0 &&
+    regionData !== null &&
+    gridMatrix !== null;
   
   const value: DataContextType = {
     notifications,

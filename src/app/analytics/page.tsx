@@ -9,13 +9,9 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { ArrowLeft, Filter, X, ChevronRight } from 'lucide-react';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
-import { useRegionData } from '@/hooks/useRegionData';
 import { TimeFilterComponent, useTimeFilter } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
 import { filterNotificationsByRegionName } from '@/utils/regionMatcher';
-
-// RegionData interface is now imported from the hook
-// RegionStructure is replaced by the RegionData type from the hook
 
 type ViewMode = 'city' | 'district';
 
@@ -32,9 +28,6 @@ interface AnalyticsData {
   criticalNotifications: number;
   typeDistribution: { [type: string]: number };
 }
-
-
-// 通知類型提取函數（保留用於統計）
 
 function extractNotificationType(title: string): string {
   if (title.includes('淹水感測')) return '📐 防災資訊(淹水感測)';
@@ -73,16 +66,14 @@ function AnalyticsContent() {
   
   const [currentRegionFilter, setCurrentRegionFilter] = useState<string | null>(null);
   
-  // 使用統一的數據處理hook，並傳入地區篩選參數
-  const { 
+  const {
     finalNotifications: filteredNotifications,
     timeFilteredNotifications,
-    loading, 
-    error 
+    regionData,
+    gridMatrix,
+    loading,
+    error,
   } = useFilteredNotifications(currentRegionFilter);
-  
-  // Use the shared region data hook
-  const { regionData, gridMatrix } = useRegionData();
   const [viewMode, setViewMode] = useState<ViewMode>('city');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
