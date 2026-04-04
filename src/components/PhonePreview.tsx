@@ -30,8 +30,8 @@ export default function PhonePreview({ notification }: PhonePreviewProps) {
   `;
 
   return (
-    <div className="flex items-center justify-center h-full">
-      <div className="relative transform hover:scale-[1.05] transition-transform duration-300">
+    <div className="flex h-full items-center justify-center">
+      <div className="relative transition-transform duration-300 hover:scale-[1.02]">
         {/* iPhone 14 Pro 外殼 */}
         <div className="relative">
           {/* 外殼陰影 */}

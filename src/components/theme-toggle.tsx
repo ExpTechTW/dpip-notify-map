@@ -13,7 +13,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={() => mounted && setTheme(theme === 'light' ? 'dark' : 'light')}
-      className="w-8 h-8 flex items-center justify-center rounded-lg border border-border/50 bg-background hover:bg-accent transition-colors"
+      className="h-9 w-9 flex items-center justify-center rounded-xl border border-border/60 bg-background/80 shadow-sm hover:bg-accent hover:border-border transition-all active:scale-[0.97]"
       aria-label="切換主題"
     >
       {mounted && theme === 'light'

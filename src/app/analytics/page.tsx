@@ -337,32 +337,33 @@ function AnalyticsContent() {
 
   if (error) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="text-center py-12 text-red-500">載入通知資料失敗: {error}</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="text-center py-12 text-red-500">載入資料失敗: {error}</div>
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-background to-muted/35 p-6">
+        <div className="max-w-md rounded-2xl border border-destructive/20 bg-card/95 p-8 text-center shadow-lg">
+          <p className="text-sm font-medium text-destructive">無法載入資料</p>
+          <p className="mt-2 text-xs text-muted-foreground">{error}</p>
+          <Link href={homeUrl}>
+            <Button variant="outline" size="sm" className="mt-6 rounded-xl">
+              返回首頁
+            </Button>
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/35">
+      <div className="container mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <Link href={homeUrl}>
-            <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="w-4 h-4" />
+            <Button variant="outline" size="sm" className="gap-2 rounded-xl border-border/60 shadow-sm">
+              <ArrowLeft className="size-4" />
               返回首頁
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold">通知統計分析</h1>
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">通知統計分析</h1>
             {viewMode === 'district' && selectedCity && (
               <div className="flex items-center gap-2 mt-1">
                 <Filter className="w-4 h-4 text-muted-foreground" />
@@ -386,10 +387,11 @@ function AnalyticsContent() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <div className="flex gap-1 bg-muted rounded-lg p-1">
+          <div className="flex gap-1 rounded-xl border border-border/50 bg-muted/35 p-1">
             <Button
               variant={viewMode === 'city' ? 'default' : 'ghost'}
               size="sm"
+              className="rounded-lg"
               onClick={() => {
                 setViewMode('city');
                 setSelectedCity(null);
@@ -402,6 +404,7 @@ function AnalyticsContent() {
             <Button
               variant={viewMode === 'district' ? 'default' : 'ghost'}
               size="sm"
+              className="rounded-lg"
               onClick={() => setViewMode('district')}
               disabled={!selectedCity}
             >
@@ -422,10 +425,11 @@ function AnalyticsContent() {
             />
           </div>
           
-          <div className="flex gap-1 bg-muted rounded-lg p-1">
+          <div className="flex gap-1 rounded-xl border border-border/50 bg-muted/35 p-1">
             <Button
               variant={limitSetting === 100 ? 'default' : 'ghost'}
               size="sm"
+              className="rounded-lg"
               onClick={() => updateLimit(100)}
             >
               100
@@ -433,6 +437,7 @@ function AnalyticsContent() {
             <Button
               variant={limitSetting === 500 ? 'default' : 'ghost'}
               size="sm"
+              className="rounded-lg"
               onClick={() => updateLimit(500)}
             >
               500
@@ -440,6 +445,7 @@ function AnalyticsContent() {
             <Button
               variant={limitSetting === 1000 ? 'default' : 'ghost'}
               size="sm"
+              className="rounded-lg"
               onClick={() => updateLimit(1000)}
             >
               1000
@@ -447,6 +453,7 @@ function AnalyticsContent() {
             <Button
               variant={limitSetting === 'all' ? 'default' : 'ghost'}
               size="sm"
+              className="rounded-lg"
               onClick={() => updateLimit('all')}
             >
               全部
@@ -806,6 +813,7 @@ function AnalyticsContent() {
           </CardContent>
         </Card>
       )}
+      </div>
     </div>
   );
 }

@@ -123,42 +123,47 @@ function HomeContent() {
     ? `${notifications.length} / ${timeFilteredNotifications.length}`
     : `${timeFilteredNotifications.length}`;
 
+  const controlSelect =
+    'h-9 appearance-none rounded-xl border border-border/60 bg-background/90 pl-3 pr-8 text-xs font-medium shadow-sm transition-[box-shadow,border-color] hover:border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30';
+
   return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
-      <header className="border-b border-border/40 px-3 sm:px-5 py-2 flex-shrink-0">
-        <div className="flex items-center justify-between gap-2">
-          {/* 左：Logo + 資訊 */}
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Image
-              src="https://raw.githubusercontent.com/ExpTechTW/DPIP-Pocket/refs/heads/main/assets/DPIP.png"
-              alt="DPIP"
-              className="rounded-lg cursor-pointer hover:opacity-80 transition-opacity flex-shrink-0"
-              width={32}
-              height={32}
+    <div className="h-screen flex flex-col bg-gradient-to-b from-background via-background to-muted/35">
+      <header className="sticky top-0 z-30 flex-shrink-0 border-b border-border/50 bg-background/80 px-3 py-2.5 shadow-sm shadow-black/[0.03] backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/70 sm:px-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
               onClick={() => window.open('https://github.com/ExpTechTW/DPIP-Pocket', '_blank')}
-            />
+              className="group relative flex-shrink-0 rounded-xl p-0.5 ring-1 ring-border/50 transition hover:ring-primary/25"
+            >
+              <Image
+                src="https://raw.githubusercontent.com/ExpTechTW/DPIP-Pocket/refs/heads/main/assets/DPIP.png"
+                alt="DPIP"
+                className="size-8 rounded-lg transition group-hover:scale-[1.02]"
+                width={32}
+                height={32}
+              />
+            </button>
             <div className="min-w-0">
-              <h1 className="text-sm font-semibold leading-tight">DPIP 通知紀錄</h1>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="text-[11px] text-muted-foreground tabular-nums">{recordCount} 筆</span>
+              <h1 className="truncate text-base font-semibold tracking-tight text-foreground">DPIP 通知紀錄</h1>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-medium tabular-nums text-muted-foreground">{recordCount} 筆</span>
                 {hasRegionFilter && (
                   <button
+                    type="button"
                     onClick={clearRegionFilter}
-                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/10 text-[11px] text-primary font-medium hover:bg-primary/20 transition-colors"
+                    className="inline-flex max-w-[min(180px,50vw)] items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary transition hover:bg-primary/18"
                   >
-                    <Filter className="w-2.5 h-2.5" />
-                    <span className="truncate max-w-[100px]">{selectedDistrict || selectedCity || regionFilter}</span>
-                    <X className="w-2.5 h-2.5" />
+                    <Filter className="size-2.5 shrink-0 opacity-80" />
+                    <span className="truncate">{selectedDistrict || selectedCity || regionFilter}</span>
+                    <X className="size-2.5 shrink-0 opacity-70" />
                   </button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* 右：控制項 */}
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* 桌面版時間篩選 */}
+          <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
             <div className="hidden lg:block">
               <TimeFilterComponent
                 timeFilter={timeFilter} startDate={startDate} endDate={endDate}
@@ -170,29 +175,29 @@ function HomeContent() {
             </div>
 
             {/* 手機版時間篩選 */}
-            <div className="lg:hidden relative">
+            <div className="relative lg:hidden">
               <select
                 value={timeFilter}
                 onChange={(e) => handleTimeFilterChange(e.target.value as TimeFilter)}
-                className="appearance-none text-xs border border-border/50 rounded-lg pl-2 pr-6 py-1.5 bg-background hover:bg-accent transition-colors cursor-pointer"
+                className={controlSelect}
               >
                 <option value="recent12h">12h</option>
                 <option value="recent24h">24h</option>
                 <option value="all">全部</option>
                 <option value="timeSlot">自定義</option>
               </select>
-              <ChevronDown className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             </div>
 
-            {/* 數量 */}
-            <div className="hidden md:flex items-center bg-muted/50 rounded-lg p-0.5 border border-border/50">
+            <div className="hidden items-center rounded-xl border border-border/50 bg-muted/35 p-1 md:flex">
               {LIMIT_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
+                  type="button"
                   onClick={() => updateLimit(opt.value)}
-                  className={`px-2 py-1 text-xs font-medium rounded-md transition-all ${
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
                     limitSetting === opt.value
-                      ? 'bg-background text-foreground shadow-sm'
+                      ? 'bg-background text-foreground shadow-sm ring-1 ring-black/[0.04] dark:ring-white/10'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -201,10 +206,9 @@ function HomeContent() {
               ))}
             </div>
 
-            {/* 地區 */}
             {regionData && (
-              <div className="hidden md:flex gap-1">
-                <div className="relative">
+              <div className="hidden gap-2 md:flex">
+                <div className="relative min-w-[7.5rem]">
                   <select
                     value={selectedCity || ''}
                     onChange={(e) => {
@@ -216,7 +220,7 @@ function HomeContent() {
                       if (city) { params.set('region', encodeURIComponent(city)); } else { params.delete('region'); }
                       router.push(`/?${params.toString()}`, { scroll: false });
                     }}
-                    className="appearance-none text-xs border border-border/50 rounded-lg pl-2 pr-6 py-1.5 bg-background hover:bg-accent transition-colors cursor-pointer"
+                    className={`${controlSelect} w-full min-w-0`}
                   >
                     <option value="">全部縣市</option>
                     <option value="全部(不指定地區的全部用戶廣播通知)">全國廣播</option>
@@ -224,11 +228,11 @@ function HomeContent() {
                       <option key={city} value={city}>{city}</option>
                     ))}
                   </select>
-                  <ChevronDown className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 </div>
 
                 {selectedCity && selectedCity !== '全部(不指定地區的全部用戶廣播通知)' && (
-                  <div className="relative">
+                  <div className="relative min-w-[6.5rem] max-w-[10rem]">
                     <select
                       value={selectedDistrict || ''}
                       onChange={(e) => {
@@ -240,41 +244,42 @@ function HomeContent() {
                         if (region) { params.set('region', encodeURIComponent(region)); } else { params.delete('region'); }
                         router.push(`/?${params.toString()}`, { scroll: false });
                       }}
-                      className="appearance-none text-xs border border-border/50 rounded-lg pl-2 pr-6 py-1.5 bg-background hover:bg-accent transition-colors cursor-pointer"
+                      className={`${controlSelect} w-full min-w-0 truncate`}
                     >
                       <option value="">全部鄉鎮區</option>
                       {Object.keys(regionData[selectedCity] || {}).map(d => (
                         <option key={d} value={`${selectedCity}${d}`}>{d}</option>
                       ))}
                     </select>
-                    <ChevronDown className="w-3 h-3 absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                   </div>
                 )}
               </div>
             )}
 
-            <div className="w-px h-5 bg-border/50 hidden sm:block" />
+            <div className="hidden h-7 w-px bg-border/60 sm:block" />
 
-            <Link href={analyticsUrl}>
-              <button className="h-8 px-2.5 flex items-center gap-1.5 text-xs font-medium rounded-lg border border-border/50 bg-background hover:bg-accent transition-colors">
-                <BarChart3 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">分析</span>
-              </button>
+            <Link
+              href={analyticsUrl}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border/60 bg-background/90 px-3 text-xs font-semibold shadow-sm transition hover:border-primary/25 hover:bg-accent/60"
+            >
+              <BarChart3 className="size-3.5 text-primary/90" />
+              <span className="hidden sm:inline">分析</span>
             </Link>
             <ThemeToggle />
             <button
+              type="button"
               onClick={refetch}
-              className="h-8 px-2.5 flex items-center gap-1.5 text-xs font-medium rounded-lg border border-border/50 bg-background hover:bg-accent transition-colors"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-border/60 bg-background/90 px-3 text-xs font-semibold shadow-sm transition hover:border-primary/25 hover:bg-accent/60"
             >
-              <RefreshCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCcw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">重整</span>
             </button>
           </div>
         </div>
       </header>
 
-      {/* 內容 */}
-      <div className="flex-1 flex overflow-hidden min-h-0 p-2 sm:p-3 lg:p-4 gap-2 sm:gap-3 lg:gap-4 relative">
+      <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden p-2 sm:gap-3 sm:p-3 lg:gap-4 lg:p-4">
         {loading && (
           <LoadingSpinner
             overlay size="md"
@@ -284,67 +289,65 @@ function HomeContent() {
         )}
 
         {error && !loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-            <div className="text-center space-y-3">
-              <AlertTriangle className="w-8 h-8 text-destructive mx-auto" />
-              <p className="text-sm text-muted-foreground">{error}</p>
-              <Button onClick={refetch} size="sm" className="gap-2">
-                <RefreshCcw className="w-3.5 h-3.5" />
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/75 p-4 backdrop-blur-md">
+            <div className="max-w-sm rounded-2xl border border-destructive/20 bg-card/95 p-6 text-center shadow-lg shadow-black/10">
+              <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-destructive/10">
+                <AlertTriangle className="size-6 text-destructive" />
+              </div>
+              <p className="text-sm font-medium text-foreground">{error}</p>
+              <Button onClick={refetch} size="sm" className="mt-4 gap-2 rounded-xl">
+                <RefreshCcw className="size-3.5" />
                 重試
               </Button>
             </div>
           </div>
         )}
 
-        {/* 桌面版 xl+ */}
-        <div className="hidden xl:flex flex-1 min-h-0 gap-3">
-          <Card className="w-80 flex-shrink-0 overflow-hidden">
+        <div className="hidden min-h-0 flex-1 gap-3 xl:flex">
+          <Card className="h-full w-80 flex-shrink-0 !gap-0 !py-0">
             <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
           </Card>
-          <Card className="w-[450px] bg-gradient-to-b from-muted/20 to-muted/40 flex-shrink-0 overflow-hidden">
+          <Card className="h-full w-[450px] flex-shrink-0 !gap-0 !py-0 bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
             <PhonePreview notification={selectedNotification} />
           </Card>
-          <Card className="flex-1 min-w-0 overflow-hidden">
+          <Card className="min-w-0 flex-1 !gap-0 !py-0">
             <MapView notification={selectedNotification} />
           </Card>
         </div>
 
-        {/* 大平板 lg */}
-        <div className="hidden lg:flex xl:hidden flex-1 min-h-0 gap-3">
-          <Card className="w-72 flex-shrink-0 overflow-hidden">
+        <div className="hidden min-h-0 flex-1 gap-3 lg:flex xl:hidden">
+          <Card className="h-full w-72 flex-shrink-0 !gap-0 !py-0">
             <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
           </Card>
-          <div className="flex-1 flex flex-col min-w-0 gap-3">
-            <Card className="h-80 bg-gradient-to-b from-muted/20 to-muted/40 flex-shrink-0 overflow-hidden">
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <Card className="h-80 flex-shrink-0 !gap-0 !py-0 bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
               <PhonePreview notification={selectedNotification} />
             </Card>
-            <Card className="flex-1 min-h-0 overflow-hidden">
+            <Card className="min-h-0 flex-1 !gap-0 !py-0">
               <MapView notification={selectedNotification} />
             </Card>
           </div>
         </div>
 
-        {/* 平板 md */}
-        <div className="hidden md:flex lg:hidden flex-1 flex-col min-h-0 gap-3">
-          <Card className="h-48 flex-shrink-0 overflow-hidden">
+        <div className="hidden min-h-0 flex-1 flex-col gap-3 md:flex lg:hidden">
+          <Card className="h-48 flex-shrink-0 !gap-0 !py-0">
             <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
           </Card>
-          <div className="flex-1 flex min-h-0 gap-3">
-            <Card className="w-80 bg-gradient-to-b from-muted/20 to-muted/40 flex-shrink-0 overflow-hidden">
+          <div className="flex min-h-0 flex-1 gap-3">
+            <Card className="w-80 flex-shrink-0 !gap-0 !py-0 bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
               <PhonePreview notification={selectedNotification} />
             </Card>
-            <Card className="flex-1 min-w-0 overflow-hidden">
+            <Card className="min-w-0 flex-1 !gap-0 !py-0">
               <MapView notification={selectedNotification} />
             </Card>
           </div>
         </div>
 
-        {/* 手機 */}
-        <div className="flex md:hidden flex-1 flex-col min-h-0 gap-2">
-          <Card className="h-[35%] flex-shrink-0 min-h-0 overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-2 md:hidden">
+          <Card className="h-[35%] min-h-0 flex-shrink-0 !gap-0 !py-0">
             <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
           </Card>
-          <Card className="flex-1 min-h-0 overflow-hidden rounded-none -mx-2 -mb-2">
+          <Card className="min-h-0 flex-1 !gap-0 !py-0 overflow-hidden rounded-2xl">
             <MapView notification={selectedNotification} />
           </Card>
         </div>

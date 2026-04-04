@@ -44,60 +44,66 @@ export default function NotificationList({
 
   if (notifications.length === 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center text-center p-6">
-        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-          <Inbox className="w-6 h-6 text-muted-foreground" />
+      <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+        <div className="mb-3 flex size-14 items-center justify-center rounded-2xl bg-muted/80 ring-1 ring-border/50">
+          <Inbox className="size-7 text-muted-foreground" />
         </div>
-        <p className="text-sm font-medium text-muted-foreground">沒有通知紀錄</p>
-        <p className="text-xs text-muted-foreground/60 mt-1">調整篩選條件試試</p>
+        <p className="text-sm font-semibold text-foreground">沒有通知紀錄</p>
+        <p className="mt-1 max-w-[200px] text-xs leading-relaxed text-muted-foreground">試著放寬時間或地區篩選</p>
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <ScrollArea ref={scrollAreaRef} className="h-full">
-        <div className="p-2 space-y-1.5">
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border/50 bg-muted/20 px-3 py-2">
+        <p className="text-[11px] font-semibold tracking-wide text-muted-foreground">通知列表</p>
+        <p className="text-xs tabular-nums text-muted-foreground/80">{notifications.length} 筆</p>
+      </div>
+      <ScrollArea ref={scrollAreaRef} className="h-full min-h-0">
+        <div className="space-y-2 p-2">
           {notifications.map((notification, index) => {
             const isSelected = selectedNotification?.timestamp === notification.timestamp;
             return (
               <Card
                 key={`${notification.timestamp}-${index}`}
                 ref={isSelected ? selectedItemRef : null}
-                className={`relative cursor-pointer transition-all duration-150 border ${
+                className={`relative cursor-pointer !gap-0 !py-0 transition-all duration-200 ${
                   isSelected
-                    ? 'border-primary/50 bg-primary/5 shadow-md shadow-primary/5'
-                    : 'border-transparent hover:border-border hover:bg-accent/30'
+                    ? 'border-primary/45 bg-primary/[0.07] shadow-md ring-2 ring-primary/15'
+                    : 'border-border/40 bg-card/50 hover:border-border hover:bg-accent/40 hover:shadow-sm'
                 }`}
                 onClick={() => onSelectNotification(notification)}
               >
-                <div className="p-2.5">
-                  <div className="flex items-start gap-2.5">
-                    <div className={`p-1.5 rounded-lg flex-shrink-0 mt-0.5 ${
-                      notification.critical
-                        ? 'bg-destructive/10 text-destructive'
-                        : 'bg-primary/10 text-primary'
-                    }`}>
+                <div className="p-3">
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl ${
+                        notification.critical
+                          ? 'bg-destructive/12 text-destructive'
+                          : 'bg-primary/12 text-primary'
+                      }`}
+                    >
                       {notification.critical
-                        ? <AlertTriangle className="w-3.5 h-3.5" />
-                        : <Shield className="w-3.5 h-3.5" />
+                        ? <AlertTriangle className="size-4" />
+                        : <Shield className="size-4" />
                       }
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-1.5 mb-0.5">
-                        <h3 className="font-medium text-sm leading-snug line-clamp-1">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex items-start justify-between gap-2">
+                        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
                           {notification.title}
                         </h3>
                         {notification.critical && (
-                          <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 flex-shrink-0">
+                          <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px] font-semibold">
                             緊急
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-1.5">
+                      <p className="mb-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                         {notification.body.split('\n')[0]}
                       </p>
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground/70">
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground/80">
                         <time>
                           {new Date(notification.timestamp).toLocaleString('zh-TW', {
                             month: 'numeric',

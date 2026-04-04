@@ -347,17 +347,18 @@ export default function MapView({ notification }: MapViewProps) {
   }, [notification, notificationBounds, processedGeoJSON, regionData, applyNotification, clearLayers]);
 
   return (
-    <div className="h-full relative md:rounded-lg overflow-hidden">
+    <div className="relative h-full overflow-hidden md:rounded-xl">
       <div ref={mapContainer} className="h-full w-full" />
       {!notification && (
-        <div className="absolute inset-0 bg-background/95 backdrop-blur-sm flex items-center justify-center">
-          <div className="text-center max-w-md mx-auto p-8">
-            <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-muted/40 via-background/92 to-background/95 backdrop-blur-[2px]">
+          <div className="mx-auto max-w-xs rounded-2xl border border-border/50 bg-card/90 p-8 text-center shadow-lg shadow-black/[0.06]">
+            <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/15">
+              <svg className="size-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
               </svg>
             </div>
-            <p className="text-sm text-muted-foreground">選擇通知以查看地理範圍</p>
+            <p className="text-sm font-semibold text-foreground">地圖預覽</p>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">從左側列表選一則通知，即可在地圖上檢視影響範圍</p>
           </div>
         </div>
       )}

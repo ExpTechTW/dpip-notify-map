@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 
 export type TimeFilter = 'recent1h' | 'recent3h' | 'recent6h' | 'recent12h' | 'recent24h' | 'all' | 'timeSlot';
@@ -41,15 +41,16 @@ export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
   onTimeFilterChange, onStartDateChange, onEndDateChange, onApplyTimeSlot,
 }) => {
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex items-center bg-muted/50 rounded-lg p-0.5 border border-border/50">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center rounded-xl border border-border/50 bg-muted/35 p-1">
         {TIME_OPTIONS.map(opt => (
           <button
             key={opt.value}
+            type="button"
             onClick={() => onTimeFilterChange(opt.value)}
-            className={`px-2 py-1 text-xs font-medium rounded-md transition-all ${
+            className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
               timeFilter === opt.value
-                ? 'bg-background text-foreground shadow-sm'
+                ? 'bg-background text-foreground shadow-sm ring-1 ring-black/[0.04] dark:ring-white/10'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -59,22 +60,25 @@ export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
       </div>
 
       {timeFilter === 'timeSlot' && (
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           <input
-            type="date" value={startDate}
+            type="date"
+            value={startDate}
             onChange={(e) => onStartDateChange(e.target.value)}
-            className="text-xs border border-border rounded-md px-2 py-1 bg-background"
+            className="rounded-lg border border-border/60 bg-background/90 px-2.5 py-1.5 text-xs font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
-          <span className="text-xs text-muted-foreground">-</span>
+          <span className="text-xs text-muted-foreground">—</span>
           <input
-            type="date" value={endDate}
+            type="date"
+            value={endDate}
             onChange={(e) => onEndDateChange(e.target.value)}
-            className="text-xs border border-border rounded-md px-2 py-1 bg-background"
+            className="rounded-lg border border-border/60 bg-background/90 px-2.5 py-1.5 text-xs font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
           <button
+            type="button"
             onClick={onApplyTimeSlot}
             disabled={!startDate || !endDate}
-            className="px-2 py-1 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
+            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-45"
           >
             套用
           </button>
