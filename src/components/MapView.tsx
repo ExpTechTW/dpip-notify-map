@@ -200,7 +200,20 @@ export default function MapView({ notification }: MapViewProps) {
     map.current.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.current.on('error', () => {});
 
-    return () => { map.current?.remove(); };
+    const container = mapContainer.current;
+    const ro =
+      typeof ResizeObserver !== 'undefined' && container
+        ? new ResizeObserver(() => {
+            map.current?.resize();
+          })
+        : null;
+    ro?.observe(container);
+    queueMicrotask(() => map.current?.resize());
+
+    return () => {
+      ro?.disconnect();
+      map.current?.remove();
+    };
   }, []);
 
   const processedGeoJSON = useMemo(() => {

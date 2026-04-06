@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -14,6 +14,12 @@ const fontSans = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "DPIP 通知發送紀錄",
   description: "DPIP 通知發送紀錄與地圖視覺化系統",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

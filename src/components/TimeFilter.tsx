@@ -16,7 +16,7 @@ export interface TimeFilterProps {
   compact?: boolean;
 }
 
-const TIME_OPTIONS: { value: TimeFilter; label: string }[] = [
+export const TIME_FILTER_OPTIONS: { value: TimeFilter; label: string }[] = [
   { value: 'recent1h', label: '1h' },
   { value: 'recent3h', label: '3h' },
   { value: 'recent6h', label: '6h' },
@@ -34,7 +34,7 @@ const DURATION_MAP: Record<string, number> = {
   recent24h: 24 * 60 * 60 * 1000,
 };
 
-const VALID_FILTERS = new Set<string>(TIME_OPTIONS.map(o => o.value));
+const VALID_FILTERS = new Set<string>(TIME_FILTER_OPTIONS.map(o => o.value));
 
 export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
   timeFilter, startDate, endDate,
@@ -43,7 +43,7 @@ export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center rounded-xl border border-border/50 bg-muted/35 p-1">
-        {TIME_OPTIONS.map(opt => (
+        {TIME_FILTER_OPTIONS.map(opt => (
           <button
             key={opt.value}
             type="button"

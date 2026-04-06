@@ -11,12 +11,15 @@ interface NotificationListProps {
   notifications: NotificationRecord[];
   selectedNotification: NotificationRecord | null;
   onSelectNotification: (notification: NotificationRecord) => void;
+  /** 手機全螢幕列表：單行標題列，省垂直空間 */
+  compactHeader?: boolean;
 }
 
 export default function NotificationList({
   notifications,
   selectedNotification,
   onSelectNotification,
+  compactHeader = false,
 }: NotificationListProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
@@ -55,13 +58,20 @@ export default function NotificationList({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border/50 bg-muted/20 px-3 py-2">
-        <p className="text-[11px] font-semibold tracking-wide text-muted-foreground">通知列表</p>
-        <p className="text-xs tabular-nums text-muted-foreground/80">{notifications.length} 筆</p>
-      </div>
-      <ScrollArea ref={scrollAreaRef} className="h-full min-h-0">
-        <div className="space-y-2 p-2">
+    <div className="flex h-full min-h-0 flex-col">
+      {compactHeader ? (
+        <div className="flex shrink-0 items-center justify-between border-b border-border/50 bg-muted/20 px-3 py-2">
+          <span className="text-xs font-semibold text-muted-foreground">通知列表</span>
+          <span className="text-xs tabular-nums text-muted-foreground/80">{notifications.length} 筆</span>
+        </div>
+      ) : (
+        <div className="shrink-0 border-b border-border/50 bg-muted/20 px-3 py-2">
+          <p className="text-[11px] font-semibold tracking-wide text-muted-foreground">通知列表</p>
+          <p className="text-xs tabular-nums text-muted-foreground/80">{notifications.length} 筆</p>
+        </div>
+      )}
+      <ScrollArea ref={scrollAreaRef} className="h-full min-h-0 min-w-0 flex-1 overflow-hidden [&_[data-slot=scroll-area-viewport]]:min-h-0">
+        <div className="space-y-2 p-2 pb-3">
           {notifications.map((notification, index) => {
             const isSelected = selectedNotification?.timestamp === notification.timestamp;
             return (
@@ -75,10 +85,10 @@ export default function NotificationList({
                 }`}
                 onClick={() => onSelectNotification(notification)}
               >
-                <div className="p-3">
-                  <div className="flex items-start gap-3">
+                <div className="p-2.5 sm:p-3">
+                  <div className="flex items-start gap-2.5 sm:gap-3">
                     <div
-                      className={`mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl ${
+                      className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg sm:size-9 sm:rounded-xl ${
                         notification.critical
                           ? 'bg-destructive/12 text-destructive'
                           : 'bg-primary/12 text-primary'

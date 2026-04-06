@@ -44,6 +44,51 @@
 }
 
 @layer utilities {
+  /*
+   * 首頁 shell：純 @media 切 display，避免 Tailwind v4 同元素 `flex` + `max-*:hidden` / `md:hidden`
+   * 編譯順序導致手機仍為 flex、桌面雙欄與手機欄並排擠壞。
+   */
+  .home-mobile-only {
+    display: flex;
+  }
+  @media (min-width: 768px) {
+    .home-mobile-only {
+      display: none;
+    }
+  }
+  .home-desktop-only {
+    display: none;
+  }
+  @media (min-width: 768px) {
+    .home-desktop-only {
+      display: flex;
+    }
+  }
+  .home-xl-three-col {
+    display: none;
+  }
+  @media (min-width: 1280px) {
+    .home-xl-three-col {
+      display: flex;
+    }
+  }
+  .home-tablet-two-col {
+    display: flex;
+  }
+  @media (min-width: 1280px) {
+    .home-tablet-two-col {
+      display: none;
+    }
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;

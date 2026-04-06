@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense, useMemo } from 'react';
+import { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useLimitSync } from '@/hooks/useLimitSync';
 import NotificationList from '@/components/NotificationList';
@@ -9,12 +9,13 @@ import MapView from '@/components/MapView';
 import { NotificationRecord } from '@/types/notify';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { RefreshCcw, AlertTriangle, BarChart3, Filter, X, ChevronDown } from 'lucide-react';
+import { RefreshCcw, AlertTriangle, BarChart3, Filter, X, ChevronDown, List as ListIcon, Map as MapIcon } from 'lucide-react';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ThemeToggle } from '@/components/theme-toggle';
 import Link from 'next/link';
-import { TimeFilterComponent, useTimeFilter, TimeFilter } from '@/components/TimeFilter';
+import { TimeFilterComponent, useTimeFilter, TimeFilter, TIME_FILTER_OPTIONS } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
+import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
 const LIMIT_OPTIONS = [
@@ -26,6 +27,7 @@ const LIMIT_OPTIONS = [
 
 function HomeContent() {
   const { limitSetting, updateLimit } = useLimitSync();
+  const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
   const [selectedNotification, setSelectedNotification] = useState<NotificationRecord | null>(null);
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
@@ -102,12 +104,15 @@ function HomeContent() {
     }
   }, [notifications, searchParams]);
 
-  const handleSelectNotification = (notification: NotificationRecord) => {
+  const handleSelectNotification = useCallback((notification: NotificationRecord) => {
     setSelectedNotification(notification);
     const params = new URLSearchParams(searchParams);
     params.set('t', notification.timestamp.toString());
     router.push(`?${params.toString()}`, { scroll: false });
-  };
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+      setMobileTab('map');
+    }
+  }, [router, searchParams]);
 
   const clearRegionFilter = () => {
     setSelectedCity(null);
@@ -124,13 +129,179 @@ function HomeContent() {
     : `${timeFilteredNotifications.length}`;
 
   const controlSelect =
-    'h-9 appearance-none rounded-xl border border-border/60 bg-background/90 pl-3 pr-8 text-xs font-medium shadow-sm transition-[box-shadow,border-color] hover:border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30';
+    'h-10 touch-manipulation appearance-none rounded-xl border border-border/60 bg-background/90 pl-3 pr-8 text-xs font-medium shadow-sm transition-[box-shadow,border-color] hover:border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 sm:h-9';
+
+  const onCityChange = (city: string) => {
+    setSelectedCity(city || null);
+    setSelectedDistrict(null);
+    setRegionFilter(city || null);
+    const params = new URLSearchParams(searchParams);
+    if (city) params.set('region', encodeURIComponent(city));
+    else params.delete('region');
+    router.push(`/?${params.toString()}`, { scroll: false });
+  };
+
+  const onDistrictChange = (district: string) => {
+    setSelectedDistrict(district || null);
+    setRegionFilter(district || selectedCity);
+    const params = new URLSearchParams(searchParams);
+    const region = district || selectedCity;
+    if (region) params.set('region', encodeURIComponent(region));
+    else params.delete('region');
+    router.push(`/?${params.toString()}`, { scroll: false });
+  };
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-b from-background via-background to-muted/35">
-      <header className="sticky top-0 z-30 flex-shrink-0 border-b border-border/50 bg-background/80 px-3 py-2.5 shadow-sm shadow-black/[0.03] backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/70 sm:px-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
+    <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 min-w-0 w-full max-w-[100dvw] flex-col overflow-x-hidden bg-gradient-to-b from-background via-background to-muted/35">
+      <header className="sticky top-0 z-30 flex-shrink-0 border-b border-border/50 bg-background/85 pt-[max(0.25rem,env(safe-area-inset-top))] shadow-sm shadow-black/[0.03] backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/75">
+        {/* 手機頂欄：home-mobile-only（globals.css @media，避免與 flex 層疊衝突） */}
+        <div className="home-mobile-only flex-col gap-2 px-3 pb-2.5 pt-1">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => window.open('https://github.com/ExpTechTW/DPIP-Pocket', '_blank')}
+                className="group relative shrink-0 rounded-xl p-0.5 ring-1 ring-border/50 transition hover:ring-primary/25"
+              >
+                <Image
+                  src="https://raw.githubusercontent.com/ExpTechTW/DPIP-Pocket/refs/heads/main/assets/DPIP.png"
+                  alt="DPIP"
+                  className="size-9 rounded-lg transition group-hover:scale-[1.02]"
+                  width={36}
+                  height={36}
+                />
+              </button>
+              <div className="min-w-0">
+                <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">DPIP 通知紀錄</h1>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                  <span className="text-[11px] font-medium tabular-nums text-muted-foreground">{recordCount} 筆</span>
+                  {hasRegionFilter && (
+                    <button
+                      type="button"
+                      onClick={clearRegionFilter}
+                      className="inline-flex max-w-[min(200px,55vw)] items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary active:scale-[0.98]"
+                    >
+                      <Filter className="size-2.5 shrink-0 opacity-80" />
+                      <span className="truncate">{selectedDistrict || selectedCity || regionFilter}</span>
+                      <X className="size-2.5 shrink-0 opacity-70" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <Link
+                href={analyticsUrl}
+                className="inline-flex size-11 items-center justify-center rounded-xl border border-border/60 bg-background/90 text-primary shadow-sm transition active:scale-95"
+                aria-label="分析"
+              >
+                <BarChart3 className="size-4" />
+              </Link>
+              <ThemeToggle />
+              <button
+                type="button"
+                onClick={refetch}
+                className="inline-flex size-11 items-center justify-center rounded-xl border border-border/60 bg-background/90 shadow-sm transition active:scale-95"
+                aria-label="重新載入"
+              >
+                <RefreshCcw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          <div className="scrollbar-hide -mx-1 flex gap-2 overflow-x-auto px-1 [-webkit-overflow-scrolling:touch]">
+            <div className="relative shrink-0">
+              <select
+                value={timeFilter}
+                onChange={(e) => handleTimeFilterChange(e.target.value as TimeFilter)}
+                className={`${controlSelect} min-w-[5.5rem]`}
+              >
+                {TIME_FILTER_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            </div>
+            <div className="relative shrink-0">
+              <select
+                value={limitSetting === 'all' ? 'all' : String(limitSetting)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updateLimit(v === 'all' ? 'all' : Number(v) as 100 | 500 | 1000);
+                }}
+                className={`${controlSelect} min-w-[4.5rem]`}
+              >
+                {LIMIT_OPTIONS.map(opt => (
+                  <option key={String(opt.value)} value={String(opt.value)}>{opt.label}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            </div>
+            {regionData && (
+              <>
+                <div className="relative min-w-[6.5rem] shrink-0">
+                  <select
+                    value={selectedCity || ''}
+                    onChange={(e) => onCityChange(e.target.value)}
+                    className={`${controlSelect} w-full min-w-[6.5rem]`}
+                  >
+                    <option value="">縣市</option>
+                    <option value="全部(不指定地區的全部用戶廣播通知)">全國廣播</option>
+                    {Object.keys(regionData).map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                </div>
+                {selectedCity && selectedCity !== '全部(不指定地區的全部用戶廣播通知)' && (
+                  <div className="relative min-w-[6.5rem] shrink-0">
+                    <select
+                      value={selectedDistrict || ''}
+                      onChange={(e) => onDistrictChange(e.target.value)}
+                      className={`${controlSelect} w-full min-w-[6.5rem]`}
+                    >
+                      <option value="">鄉鎮區</option>
+                      {Object.keys(regionData[selectedCity] || {}).map(d => (
+                        <option key={d} value={`${selectedCity}${d}`}>{d}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {timeFilter === 'timeSlot' && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/50 bg-muted/25 p-2">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => handleStartDateChange(e.target.value)}
+                className="min-h-10 flex-1 rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs touch-manipulation"
+              />
+              <span className="text-xs text-muted-foreground">—</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => handleEndDateChange(e.target.value)}
+                className="min-h-10 flex-1 rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs touch-manipulation"
+              />
+              <Button
+                type="button"
+                size="sm"
+                className="min-h-10 w-full rounded-xl sm:w-auto"
+                disabled={!startDate || !endDate}
+                onClick={handleApplyTimeSlot}
+              >
+                套用區間
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="home-desktop-only flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2.5 sm:px-5">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <button
               type="button"
               onClick={() => window.open('https://github.com/ExpTechTW/DPIP-Pocket', '_blank')}
@@ -163,8 +334,8 @@ function HomeContent() {
             </div>
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
-            <div className="hidden lg:block">
+          <div className="flex min-w-0 flex-shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2 lg:flex-nowrap">
+            <div className="hidden min-w-0 lg:block">
               <TimeFilterComponent
                 timeFilter={timeFilter} startDate={startDate} endDate={endDate}
                 onTimeFilterChange={handleTimeFilterChange}
@@ -174,17 +345,15 @@ function HomeContent() {
               />
             </div>
 
-            {/* 手機版時間篩選 */}
             <div className="relative lg:hidden">
               <select
                 value={timeFilter}
                 onChange={(e) => handleTimeFilterChange(e.target.value as TimeFilter)}
                 className={controlSelect}
               >
-                <option value="recent12h">12h</option>
-                <option value="recent24h">24h</option>
-                <option value="all">全部</option>
-                <option value="timeSlot">自定義</option>
+                {TIME_FILTER_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             </div>
@@ -211,15 +380,7 @@ function HomeContent() {
                 <div className="relative min-w-[7.5rem]">
                   <select
                     value={selectedCity || ''}
-                    onChange={(e) => {
-                      const city = e.target.value;
-                      setSelectedCity(city || null);
-                      setSelectedDistrict(null);
-                      setRegionFilter(city || null);
-                      const params = new URLSearchParams(searchParams);
-                      if (city) { params.set('region', encodeURIComponent(city)); } else { params.delete('region'); }
-                      router.push(`/?${params.toString()}`, { scroll: false });
-                    }}
+                    onChange={(e) => onCityChange(e.target.value)}
                     className={`${controlSelect} w-full min-w-0`}
                   >
                     <option value="">全部縣市</option>
@@ -235,15 +396,7 @@ function HomeContent() {
                   <div className="relative min-w-[6.5rem] max-w-[10rem]">
                     <select
                       value={selectedDistrict || ''}
-                      onChange={(e) => {
-                        const district = e.target.value;
-                        setSelectedDistrict(district || null);
-                        setRegionFilter(district || selectedCity);
-                        const params = new URLSearchParams(searchParams);
-                        const region = district || selectedCity;
-                        if (region) { params.set('region', encodeURIComponent(region)); } else { params.delete('region'); }
-                        router.push(`/?${params.toString()}`, { scroll: false });
-                      }}
+                      onChange={(e) => onDistrictChange(e.target.value)}
                       className={`${controlSelect} w-full min-w-0 truncate`}
                     >
                       <option value="">全部鄉鎮區</option>
@@ -279,7 +432,7 @@ function HomeContent() {
         </div>
       </header>
 
-      <div className="relative flex min-h-0 flex-1 gap-2 overflow-hidden p-2 sm:gap-3 sm:p-3 lg:gap-4 lg:p-4">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden p-2 pb-1 sm:gap-3 sm:p-3 md:flex-row md:pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:gap-4 lg:p-4">
         {loading && (
           <LoadingSpinner
             overlay size="md"
@@ -303,53 +456,86 @@ function HomeContent() {
           </div>
         )}
 
-        <div className="hidden min-h-0 flex-1 gap-3 xl:flex">
-          <Card className="h-full w-80 flex-shrink-0 !gap-0 !py-0">
-            <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
-          </Card>
-          <Card className="h-full w-[450px] flex-shrink-0 !gap-0 !py-0 bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
-            <PhonePreview notification={selectedNotification} />
-          </Card>
-          <Card className="min-w-0 flex-1 !gap-0 !py-0">
-            <MapView notification={selectedNotification} />
-          </Card>
-        </div>
-
-        <div className="hidden min-h-0 flex-1 gap-3 lg:flex xl:hidden">
-          <Card className="h-full w-72 flex-shrink-0 !gap-0 !py-0">
-            <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
-          </Card>
-          <div className="flex min-w-0 flex-1 flex-col gap-3">
-            <Card className="h-80 flex-shrink-0 !gap-0 !py-0 bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
+        {/* 平板／桌面：home-desktop-only + xl／tablet 專用 class，不依賴 Tailwind display 變體層疊 */}
+        <div className="home-desktop-only min-h-0 min-w-0 flex-1 flex-row">
+          <div className="home-xl-three-col min-h-0 min-w-0 w-full flex-1 gap-3 overflow-hidden">
+            <Card className="h-full w-80 min-w-0 flex-shrink-0 !gap-0 !py-0">
+              <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
+            </Card>
+            <Card className="flex h-full w-[min(22rem,32vw)] max-w-[450px] min-w-0 flex-shrink-0 !gap-0 !py-0 overflow-hidden bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
               <PhonePreview notification={selectedNotification} />
             </Card>
-            <Card className="min-h-0 flex-1 !gap-0 !py-0">
+            <Card className="min-h-0 min-w-0 flex-1 !gap-0 !py-0 overflow-hidden">
               <MapView notification={selectedNotification} />
             </Card>
           </div>
-        </div>
 
-        <div className="hidden min-h-0 flex-1 flex-col gap-3 md:flex lg:hidden">
-          <Card className="h-48 flex-shrink-0 !gap-0 !py-0">
-            <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
-          </Card>
-          <div className="flex min-h-0 flex-1 gap-3">
-            <Card className="w-80 flex-shrink-0 !gap-0 !py-0 bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
-              <PhonePreview notification={selectedNotification} />
+          {/* md～xl：列表 + 上預覽下地圖 */}
+          <div className="home-tablet-two-col min-h-0 min-w-0 w-full flex-1 gap-2 overflow-hidden sm:gap-3">
+            <Card className="flex h-full w-[min(100%,18rem)] min-w-[10.5rem] max-w-[20rem] flex-shrink-0 !gap-0 !py-0 md:w-64 lg:w-72">
+              <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
             </Card>
-            <Card className="min-w-0 flex-1 !gap-0 !py-0">
-              <MapView notification={selectedNotification} />
-            </Card>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden sm:gap-3">
+              <Card className="flex h-[min(36vh,22rem)] max-h-[min(42vh,26rem)] min-h-[11rem] flex-shrink-0 !gap-0 !py-0 overflow-hidden bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
+                <PhonePreview notification={selectedNotification} />
+              </Card>
+              <Card className="min-h-0 min-w-0 flex-1 !gap-0 !py-0 overflow-hidden">
+                <MapView notification={selectedNotification} />
+              </Card>
+            </div>
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-2 md:hidden">
-          <Card className="h-[35%] min-h-0 flex-shrink-0 !gap-0 !py-0">
-            <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
-          </Card>
-          <Card className="min-h-0 flex-1 !gap-0 !py-0 overflow-hidden rounded-2xl">
-            <MapView notification={selectedNotification} />
-          </Card>
+        <div className="home-mobile-only min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-0.5 sm:px-1">
+            {mobileTab === 'list' ? (
+              <Card className="flex h-full min-h-0 min-w-0 flex-1 flex-col !gap-0 !py-0 overflow-hidden rounded-2xl border-border/60 shadow-md">
+                <NotificationList
+                  compactHeader
+                  notifications={notifications}
+                  selectedNotification={selectedNotification}
+                  onSelectNotification={handleSelectNotification}
+                />
+              </Card>
+            ) : (
+              <Card className="flex h-full min-h-0 min-w-0 flex-1 flex-col !gap-0 !py-0 overflow-hidden rounded-2xl border-border/60 shadow-md">
+                <MapView notification={selectedNotification} />
+              </Card>
+            )}
+          </div>
+          <nav
+            className="flex shrink-0 gap-1 border-t border-border/50 bg-background/95 px-2 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] backdrop-blur-md supports-[backdrop-filter]:bg-background/85"
+            aria-label="檢視模式"
+          >
+            <button
+              type="button"
+              className={cn(
+                'flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold transition active:scale-[0.98]',
+                mobileTab === 'list'
+                  ? 'bg-primary/12 text-primary'
+                  : 'text-muted-foreground'
+              )}
+              aria-current={mobileTab === 'list' ? 'page' : undefined}
+              onClick={() => setMobileTab('list')}
+            >
+              <ListIcon className="size-5" aria-hidden />
+              列表
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'flex min-h-[52px] min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold transition active:scale-[0.98]',
+                mobileTab === 'map'
+                  ? 'bg-primary/12 text-primary'
+                  : 'text-muted-foreground'
+              )}
+              aria-current={mobileTab === 'map' ? 'page' : undefined}
+              onClick={() => setMobileTab('map')}
+            >
+              <MapIcon className="size-5" aria-hidden />
+              地圖
+            </button>
+          </nav>
         </div>
       </div>
     </div>
