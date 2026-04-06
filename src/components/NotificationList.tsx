@@ -11,7 +11,6 @@ interface NotificationListProps {
   notifications: NotificationRecord[];
   selectedNotification: NotificationRecord | null;
   onSelectNotification: (notification: NotificationRecord) => void;
-  /** 手機全螢幕列表：單行標題列，省垂直空間 */
   compactHeader?: boolean;
 }
 
@@ -25,23 +24,17 @@ export default function NotificationList({
   const selectedItemRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (selectedNotification && selectedItemRef.current && scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
-      if (scrollContainer) {
-        const itemElement = selectedItemRef.current;
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const itemRect = itemElement.getBoundingClientRect();
-        const scrollTop = scrollContainer.scrollTop;
-        const itemTop = itemRect.top - containerRect.top + scrollTop;
-        const itemBottom = itemTop + itemRect.height;
+    if (!selectedNotification || !selectedItemRef.current || !scrollAreaRef.current) return;
+    const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+    if (!viewport) return;
 
-        if (itemTop < scrollTop || itemBottom > scrollTop + containerRect.height) {
-          scrollContainer.scrollTo({
-            top: itemTop - containerRect.height / 2 + itemRect.height / 2,
-            behavior: 'smooth'
-          });
-        }
-      }
+    const cRect = viewport.getBoundingClientRect();
+    const iRect = selectedItemRef.current.getBoundingClientRect();
+    const scrollTop = viewport.scrollTop;
+    const itemTop = iRect.top - cRect.top + scrollTop;
+
+    if (itemTop < scrollTop || itemTop + iRect.height > scrollTop + cRect.height) {
+      viewport.scrollTo({ top: itemTop - cRect.height / 2 + iRect.height / 2, behavior: 'smooth' });
     }
   }, [selectedNotification]);
 
@@ -59,17 +52,13 @@ export default function NotificationList({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {compactHeader ? (
-        <div className="flex shrink-0 items-center justify-between border-b border-border/50 bg-muted/20 px-3 py-2">
-          <span className="text-xs font-semibold text-muted-foreground">通知列表</span>
+      <div className="flex shrink-0 items-center justify-between border-b border-border/50 bg-muted/20 px-3 py-2">
+        <span className="text-xs font-semibold text-muted-foreground">通知列表</span>
+        {(!compactHeader || true) && (
           <span className="text-xs tabular-nums text-muted-foreground/80">{notifications.length} 筆</span>
-        </div>
-      ) : (
-        <div className="shrink-0 border-b border-border/50 bg-muted/20 px-3 py-2">
-          <p className="text-[11px] font-semibold tracking-wide text-muted-foreground">通知列表</p>
-          <p className="text-xs tabular-nums text-muted-foreground/80">{notifications.length} 筆</p>
-        </div>
-      )}
+        )}
+      </div>
+
       <ScrollArea ref={scrollAreaRef} className="h-full min-h-0 min-w-0 flex-1 overflow-hidden [&_[data-slot=scroll-area-viewport]]:min-h-0">
         <div className="space-y-2 p-2 pb-3">
           {notifications.map((notification, index) => {
@@ -78,7 +67,7 @@ export default function NotificationList({
               <Card
                 key={`${notification.timestamp}-${index}`}
                 ref={isSelected ? selectedItemRef : null}
-                className={`relative cursor-pointer !gap-0 !py-0 transition-all duration-200 ${
+                className={`relative cursor-pointer !gap-0 !py-0 transition-all duration-150 ${
                   isSelected
                     ? 'border-primary/45 bg-primary/[0.07] shadow-md ring-2 ring-primary/15'
                     : 'border-border/40 bg-card/50 hover:border-border hover:bg-accent/40 hover:shadow-sm'
@@ -86,45 +75,23 @@ export default function NotificationList({
                 onClick={() => onSelectNotification(notification)}
               >
                 <div className="p-2.5 sm:p-3">
-                  <div className="flex items-start gap-2.5 sm:gap-3">
-                    <div
-                      className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg sm:size-9 sm:rounded-xl ${
-                        notification.critical
-                          ? 'bg-destructive/12 text-destructive'
-                          : 'bg-primary/12 text-primary'
-                      }`}
-                    >
-                      {notification.critical
-                        ? <AlertTriangle className="size-4" />
-                        : <Shield className="size-4" />
-                      }
+                  <div className="flex items-start gap-2.5">
+                    <div className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg sm:size-9 sm:rounded-xl ${
+                      notification.critical ? 'bg-destructive/12 text-destructive' : 'bg-primary/12 text-primary'
+                    }`}>
+                      {notification.critical ? <AlertTriangle className="size-4" /> : <Shield className="size-4" />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex items-start justify-between gap-2">
-                        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
-                          {notification.title}
-                        </h3>
+                        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">{notification.title}</h3>
                         {notification.critical && (
-                          <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px] font-semibold">
-                            緊急
-                          </Badge>
+                          <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px] font-semibold">緊急</Badge>
                         )}
                       </div>
-                      <p className="mb-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                        {notification.body.split('\n')[0]}
-                      </p>
+                      <p className="mb-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{notification.body.split('\n')[0]}</p>
                       <div className="flex items-center justify-between text-[11px] text-muted-foreground/80">
-                        <time>
-                          {new Date(notification.timestamp).toLocaleString('zh-TW', {
-                            month: 'numeric',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </time>
-                        {notification.Polygons?.length > 0 && (
-                          <span>{notification.Polygons.length} 區域</span>
-                        )}
+                        <time>{new Date(notification.timestamp).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time>
+                        {notification.Polygons?.length > 0 && <span>{notification.Polygons.length} 區域</span>}
                       </div>
                     </div>
                   </div>

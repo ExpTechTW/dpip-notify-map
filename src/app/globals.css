@@ -89,6 +89,13 @@
     display: none;
   }
 
+  .line-clamp-4 {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -102,6 +109,15 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.phone-clock {
+  text-shadow: 0 1px 8px rgba(0,0,0,.25);
 }
 
 .custom-scrollbar::-webkit-scrollbar {
