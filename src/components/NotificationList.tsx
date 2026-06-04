@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Shield, AlertTriangle, Inbox } from 'lucide-react';
+import { AppleIcon, AndroidIcon } from '@/components/icons/PlatformIcons';
 
 interface NotificationListProps {
   notifications: NotificationRecord[];
@@ -97,7 +98,12 @@ export default function NotificationList({
                             const ios = notification.devices?.ios ?? 0;
                             const android = notification.devices?.android ?? 0;
                             return ios + android > 0
-                              ? <span className="tabular-nums" title={`iOS ${ios} / Android ${android}`}>📲 {(ios + android).toLocaleString()}</span>
+                              ? (
+                                <span className="flex items-center gap-2 tabular-nums">
+                                  <span className="inline-flex items-center gap-1" title="iOS（APNS）"><AppleIcon className="size-2.5" />{ios.toLocaleString()}</span>
+                                  <span className="inline-flex items-center gap-1" title="Android（FCM）"><AndroidIcon className="size-3" />{android.toLocaleString()}</span>
+                                </span>
+                              )
                               : <span className="opacity-55">無資料</span>;
                           })()}
                         </div>

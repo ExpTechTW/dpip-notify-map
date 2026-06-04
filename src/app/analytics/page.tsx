@@ -9,9 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { ArrowLeft, Filter, X, ChevronRight } from 'lucide-react';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
-import { TimeFilterComponent, useTimeFilter } from '@/components/TimeFilter';
+import { TimeFilterComponent, useTimeFilter, computeTimeRange } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
 import { filterNotificationsByRegionName } from '@/utils/regionMatcher';
+import { AppleIcon, AndroidIcon } from '@/components/icons/PlatformIcons';
 
 type ViewMode = 'city' | 'district';
 
@@ -117,6 +118,43 @@ function AnalyticsContent() {
 
     return { typeDistribution, criticalCount };
   }, [filteredNotifications]);
+
+  // 推播發送量與壓力(時間視窗內、全地區)
+  // 理論速率上限:單機/單 IP,各取 95% 當理論。
+  const APNS_RATE = 5;
+  const FCM_RATE = 5;
+  const THEORY_FACTOR = 0.95;
+  const deliveryStats = useMemo(() => {
+    let ios = 0;
+    let android = 0;
+    for (const n of timeFilteredNotifications) {
+      ios += n.devices?.ios ?? 0;
+      android += n.devices?.android ?? 0;
+    }
+
+    // 視窗秒數:preset/timeSlot 用篩選範圍;「全部」用資料時間跨度
+    const range = computeTimeRange(timeFilter, startDate, endDate);
+    let windowSec = 0;
+    if (range.start !== undefined) {
+      windowSec = ((range.end ?? Date.now()) - range.start) / 1000;
+    } else if (timeFilteredNotifications.length > 1) {
+      const ts = timeFilteredNotifications.map(n => n.timestamp);
+      windowSec = (Math.max(...ts) - Math.min(...ts)) / 1000;
+    }
+
+    const iosMax = windowSec > 0 ? APNS_RATE * THEORY_FACTOR * windowSec : 0;
+    const androidMax = windowSec > 0 ? FCM_RATE * THEORY_FACTOR * windowSec : 0;
+    return {
+      ios,
+      android,
+      total: ios + android,
+      windowSec,
+      iosMax,
+      androidMax,
+      iosPressure: iosMax > 0 ? ios / iosMax : null,
+      androidPressure: androidMax > 0 ? android / androidMax : null,
+    };
+  }, [timeFilteredNotifications, timeFilter, startDate, endDate]);
 
   // 緩存縣市統計數據
   const cityStats = useMemo(() => {
@@ -517,6 +555,44 @@ function AnalyticsContent() {
                 {selectedCity === '全部(不指定地區的全部用戶廣播通知)' ? '全國廣播' : selectedCity}
               </p>
             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 推播發送量與壓力(時間視窗內、全地區) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">累積發送數量</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold tabular-nums">{deliveryStats.total.toLocaleString()}</div>
+            <p className="mt-1 flex items-center gap-2.5 text-xs text-muted-foreground tabular-nums">
+              <span className="inline-flex items-center gap-1"><AppleIcon className="size-3" />{deliveryStats.ios.toLocaleString()}</span>
+              <span className="inline-flex items-center gap-1"><AndroidIcon className="size-3.5" />{deliveryStats.android.toLocaleString()}</span>
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-1.5 text-sm font-medium"><AppleIcon className="size-3.5" />iOS 推播壓力</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold tabular-nums">
+              {deliveryStats.iosPressure === null ? '—' : `${(deliveryStats.iosPressure * 100).toFixed(deliveryStats.iosPressure < 0.1 ? 2 : 1)}%`}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-1.5 text-sm font-medium"><AndroidIcon className="size-4" />Android 推播壓力</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold tabular-nums">
+              {deliveryStats.androidPressure === null ? '—' : `${(deliveryStats.androidPressure * 100).toFixed(deliveryStats.androidPressure < 0.1 ? 2 : 1)}%`}
+            </div>
           </CardContent>
         </Card>
       </div>
