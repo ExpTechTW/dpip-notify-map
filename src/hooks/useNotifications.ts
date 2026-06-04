@@ -15,6 +15,12 @@ export function useNotifications(
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchData = useCallback(async (signal?: AbortSignal) => {
+    // 自訂模式但尚未選好起訖日 → 不抓(否則會落入「無範圍 = 抓滿 91 天」而卡住 UI、拖慢日期選擇器)
+    if (timeFilter === 'timeSlot' && (!startDate || !endDate)) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 

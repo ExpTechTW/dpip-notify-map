@@ -12,7 +12,8 @@ import { RefreshCcw, AlertTriangle, BarChart3, Filter, X, ChevronDown, List as L
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { ThemeToggle } from '@/components/theme-toggle';
 import Link from 'next/link';
-import { TimeFilterComponent, useTimeFilter, TimeFilter, TIME_FILTER_OPTIONS } from '@/components/TimeFilter';
+import { TimeFilterComponent, useTimeFilter, TimeFilter, TIME_FILTER_OPTIONS, getDateBounds } from '@/components/TimeFilter';
+import { DatePicker } from '@/components/DatePicker';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
@@ -203,14 +204,17 @@ function HomeContent() {
             )}
           </div>
 
-          {timeFilter === 'timeSlot' && (
+          {timeFilter === 'timeSlot' && (() => {
+            const b = getDateBounds(startDate, endDate);
+            return (
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/50 bg-muted/25 p-2">
-              <input type="date" value={startDate} onChange={e => handleStartDateChange(e.target.value)} className="min-h-10 flex-1 rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs touch-manipulation" />
+              <DatePicker value={startDate} min={b.startMin} max={b.startMax} onChange={handleStartDateChange} className="flex-1" />
               <span className="text-xs text-muted-foreground">—</span>
-              <input type="date" value={endDate} onChange={e => handleEndDateChange(e.target.value)} className="min-h-10 flex-1 rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs touch-manipulation" />
+              <DatePicker value={endDate} min={b.endMin} max={b.endMax} onChange={handleEndDateChange} className="flex-1" />
               <Button type="button" size="sm" className="min-h-10 w-full rounded-xl sm:w-auto" disabled={!startDate || !endDate} onClick={handleApplyTimeSlot}>套用區間</Button>
             </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Desktop header */}
@@ -227,13 +231,9 @@ function HomeContent() {
           </div>
 
           <div className="flex min-w-0 flex-shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2 lg:flex-nowrap">
-            <div className="hidden min-w-0 lg:block">
+            <div className="min-w-0">
               <TimeFilterComponent timeFilter={timeFilter} startDate={startDate} endDate={endDate} onTimeFilterChange={handleTimeFilterChange} onStartDateChange={handleStartDateChange} onEndDateChange={handleEndDateChange} onApplyTimeSlot={handleApplyTimeSlot} />
             </div>
-
-            <SelectWithChevron value={timeFilter} onChange={e => handleTimeFilterChange(e.target.value as TimeFilter)} className="lg:hidden">
-              {TIME_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </SelectWithChevron>
 
             {regionData && (
               <div className="hidden gap-2 md:flex">

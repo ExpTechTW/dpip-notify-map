@@ -36,14 +36,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [precomputeCompleted, setPrecomputeCompleted] = useState(false);
   const [precomputeLoading, setPrecomputeLoading] = useState(false);
 
-  const { timeFilter, startDate, endDate } = useTimeFilter();
+  const { timeFilter, appliedStartDate, appliedEndDate } = useTimeFilter();
 
   const {
     notifications,
     loading: notificationsLoading,
     error: notificationsError,
     refetch: refetchNotifications
-  } = useNotifications(timeFilter, startDate, endDate);
+  } = useNotifications(timeFilter, appliedStartDate, appliedEndDate);
   
   const {
     regionData,

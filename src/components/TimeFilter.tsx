@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { DatePicker } from './DatePicker';
 
 export type TimeFilter = 'recent1h' | 'recent3h' | 'recent6h' | 'recent12h' | 'recent24h' | 'all' | 'timeSlot';
 
@@ -52,6 +53,26 @@ export function computeTimeRange(
   return {};
 }
 
+// 依目前起訖日算出日期輸入框可選範圍(超出者由原生選擇器灰掉):
+// 不可選未來、不可選超過保留期(91 天前)、自訂跨度 ≤ 90 天。
+export function getDateBounds(startDate: string, endDate: string) {
+  const DAY = 86400000;
+  const ymd = (ms: number) => {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const parse = (s: string) => new Date(s + 'T00:00:00').getTime();
+  const now = Date.now();
+  const today = ymd(now);
+  const floor = ymd(now - 91 * DAY); // 91 天前已被刪除,無資料
+  return {
+    startMin: endDate ? ymd(Math.max(now - 91 * DAY, parse(endDate) - 90 * DAY)) : floor,
+    startMax: endDate || today,
+    endMin: startDate || floor,
+    endMax: startDate ? ymd(Math.min(now, parse(startDate) + 90 * DAY)) : today,
+  };
+}
+
 export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
   timeFilter, startDate, endDate,
   onTimeFilterChange, onStartDateChange, onEndDateChange, onApplyTimeSlot,
@@ -75,21 +96,13 @@ export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
         ))}
       </div>
 
-      {timeFilter === 'timeSlot' && (
+      {timeFilter === 'timeSlot' && (() => {
+        const b = getDateBounds(startDate, endDate);
+        return (
         <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => onStartDateChange(e.target.value)}
-            className="rounded-lg border border-border/60 bg-background/90 px-2.5 py-1.5 text-xs font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
+          <DatePicker value={startDate} min={b.startMin} max={b.startMax} onChange={onStartDateChange} className="w-32" />
           <span className="text-xs text-muted-foreground">—</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => onEndDateChange(e.target.value)}
-            className="rounded-lg border border-border/60 bg-background/90 px-2.5 py-1.5 text-xs font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
+          <DatePicker value={endDate} min={b.endMin} max={b.endMax} onChange={onEndDateChange} className="w-32" />
           <button
             type="button"
             onClick={onApplyTimeSlot}
@@ -99,15 +112,18 @@ export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
             套用
           </button>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 };
 
 interface TimeFilterContextValue {
   timeFilter: TimeFilter;
-  startDate: string;
+  startDate: string;          // 草稿(輸入框)
   endDate: string;
+  appliedStartDate: string;   // 已套用(驅動查詢)
+  appliedEndDate: string;
   handleTimeFilterChange: (filter: TimeFilter) => void;
   handleStartDateChange: (date: string) => void;
   handleEndDateChange: (date: string) => void;
@@ -125,18 +141,20 @@ const TimeFilterContext = createContext<TimeFilterContextValue | undefined>(unde
  */
 export function TimeFilterProvider({ children }: { children: React.ReactNode }) {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('recent3h');
-  const [startDate, setStartDate] = useState('');
+  const [startDate, setStartDate] = useState('');           // 草稿:輸入框值
   const [endDate, setEndDate] = useState('');
+  const [appliedStartDate, setAppliedStartDate] = useState(''); // 已套用:驅動查詢
+  const [appliedEndDate, setAppliedEndDate] = useState('');
 
-  // mount 後從 URL 同步初始值(直接讀 window.location.search,避免 useSearchParams 的 Suspense 需求)
+  // mount 後從 URL 同步初始值(URL 內的日期視為「已套用」)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tf = params.get('timeFilter');
     if (tf && VALID_FILTERS.has(tf)) setTimeFilter(tf as TimeFilter);
     const sd = params.get('startDate');
     const ed = params.get('endDate');
-    if (sd) setStartDate(sd);
-    if (ed) setEndDate(ed);
+    if (sd) { setStartDate(sd); setAppliedStartDate(sd); }
+    if (ed) { setEndDate(ed); setAppliedEndDate(ed); }
   }, []);
 
   const updateURL = useCallback((updates: {
@@ -172,6 +190,11 @@ export function TimeFilterProvider({ children }: { children: React.ReactNode }) 
 
   const handleTimeFilterChange = useCallback((filter: TimeFilter) => {
     setTimeFilter(filter);
+    if (filter !== 'timeSlot') {
+      // 切回 preset:清掉已套用的自訂範圍(preset 不需日期)
+      setAppliedStartDate('');
+      setAppliedEndDate('');
+    }
     updateURL({ timeFilter: filter });
   }, [updateURL]);
 
@@ -185,23 +208,27 @@ export function TimeFilterProvider({ children }: { children: React.ReactNode }) 
       start = new Date(new Date(endDate).getTime() - NINETY_DAYS_MS).toISOString().slice(0, 10);
       setStartDate(start);
     }
+    // 套用才提交範圍 → 觸發查詢(輸入草稿本身不觸發)
+    setAppliedStartDate(start);
+    setAppliedEndDate(endDate);
     updateURL({ timeFilter: 'timeSlot', startDate: start, endDate });
   }, [startDate, endDate, updateURL]);
 
   const filterNotificationsByTime = useCallback(
     <T extends { timestamp: number }>(notifications: T[]): T[] => {
       if (!notifications.length) return [];
-      const { start, end } = computeTimeRange(timeFilter, startDate, endDate);
+      const { start, end } = computeTimeRange(timeFilter, appliedStartDate, appliedEndDate);
       if (start === undefined && end === undefined) return notifications;
       return notifications.filter(
         n => (start === undefined || n.timestamp >= start) && (end === undefined || n.timestamp <= end),
       );
     },
-    [timeFilter, startDate, endDate]
+    [timeFilter, appliedStartDate, appliedEndDate]
   );
 
   const value: TimeFilterContextValue = {
     timeFilter, startDate, endDate,
+    appliedStartDate, appliedEndDate,
     handleTimeFilterChange,
     handleStartDateChange: setStartDate,
     handleEndDateChange: setEndDate,

@@ -172,9 +172,12 @@ function AnalyticsContent() {
   const FCM_RATE = 5;
   const THEORY_FACTOR = 0.95;
   const deliveryStats = useMemo(() => {
+    // 不含速報類(走 SNS 廣播、無逐台送達統計):地震速報 / 緊急地震速報 / 震度速報 / 強震監視器
+    const EXCLUDED = ['地震速報', '震度速報', '強震監視器'];
     let ios = 0;
     let android = 0;
     for (const n of timeFilteredNotifications) {
+      if (EXCLUDED.some(k => n.title.includes(k))) continue;
       ios += n.devices?.ios ?? 0;
       android += n.devices?.android ?? 0;
     }
@@ -556,10 +559,15 @@ function AnalyticsContent() {
             icon={<Send className="size-4" />}
             accent="green"
             sub={
-              <span className="flex items-center gap-2.5">
-                <span className="inline-flex items-center gap-1"><AppleIcon className="size-2.5" />{deliveryStats.ios.toLocaleString()}</span>
-                <span className="inline-flex items-center gap-1"><AndroidIcon className="size-3" />{deliveryStats.android.toLocaleString()}</span>
-              </span>
+              <>
+                <span className="flex items-center gap-2.5">
+                  <span className="inline-flex items-center gap-1"><AppleIcon className="size-2.5" />{deliveryStats.ios.toLocaleString()}</span>
+                  <span className="inline-flex items-center gap-1"><AndroidIcon className="size-3" />{deliveryStats.android.toLocaleString()}</span>
+                </span>
+                <span className="mt-1 block text-[10px] leading-tight text-muted-foreground/60">
+                  不含地震速報・緊急地震速報・震度速報・強震監視器
+                </span>
+              </>
             }
           />
           <PressureTile label="iOS 推播壓力" icon={<AppleIcon className="size-3" />} pressure={deliveryStats.iosPressure} />
