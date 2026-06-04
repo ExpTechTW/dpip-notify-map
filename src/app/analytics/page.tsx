@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useMemo, Suspense } from 'react';
+import { useState, useMemo, Suspense, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLimitSync } from '@/hooks/useLimitSync';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { ArrowLeft, Filter, X, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Filter, X, ChevronRight, AlertTriangle, Bell, MapPin, Percent, Send } from 'lucide-react';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { TimeFilterComponent, useTimeFilter, computeTimeRange } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
@@ -51,6 +51,60 @@ function extractNotificationType(title: string): string {
   if (title.includes('🌊 海嘯消息')) return '🌊 海嘯消息';
   console.log(title);
   return '其他';
+}
+
+const ACCENT: Record<string, string> = {
+  default: 'bg-primary/10 text-primary',
+  red: 'bg-red-500/10 text-red-500',
+  blue: 'bg-blue-500/10 text-blue-500',
+  green: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-500',
+  amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-500',
+};
+
+function StatTile({ label, value, sub, icon, accent = 'default' }: {
+  label: ReactNode;
+  value: ReactNode;
+  sub?: ReactNode;
+  icon?: ReactNode;
+  accent?: keyof typeof ACCENT;
+}) {
+  return (
+    <Card className="border-border/50 shadow-sm transition hover:shadow-md">
+      <CardContent className="flex items-start justify-between gap-3 p-4">
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-muted-foreground">{label}</div>
+          <div className="mt-1.5 text-2xl font-bold tracking-tight tabular-nums">{value}</div>
+          {sub && <div className="mt-1 text-xs text-muted-foreground">{sub}</div>}
+        </div>
+        {icon && (
+          <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${ACCENT[accent]}`}>{icon}</span>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PressureTile({ label, icon, pressure }: { label: ReactNode; icon: ReactNode; pressure: number | null }) {
+  const pct = pressure === null ? null : pressure * 100;
+  const over = pct !== null && pct > 100;
+  const barWidth = pct === null ? 0 : Math.min(pct, 100);
+  const barColor = pct === null ? 'bg-muted-foreground/30' : over ? 'bg-red-500' : pct > 70 ? 'bg-amber-500' : 'bg-emerald-500';
+  return (
+    <Card className="border-border/50 shadow-sm transition hover:shadow-md">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">{icon}{label}</span>
+          {over && <Badge variant="destructive" className="h-4 px-1.5 text-[10px] font-semibold">超載</Badge>}
+        </div>
+        <div className={`mt-1.5 text-2xl font-bold tabular-nums ${over ? 'text-red-500' : ''}`}>
+          {pct === null ? '—' : `${pct.toFixed(pct < 0.1 ? 2 : pct < 100 ? 1 : 0)}%`}
+        </div>
+        <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div className={`h-full rounded-full ${barColor} transition-all duration-500`} style={{ width: `${barWidth}%` }} />
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function AnalyticsContent() {
@@ -500,101 +554,56 @@ function AnalyticsContent() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4" key={`stats-${viewMode}-${selectedCity}`}>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">總通知數量</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{analyticsData.totalNotifications}</div>
-            {viewMode === 'district' && selectedCity && (
-              <p className="text-xs text-muted-foreground mt-1">
-                {selectedCity === '全部(不指定地區的全部用戶廣播通知)' ? '全國廣播' : selectedCity}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">緊急通知</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-500">
-              {analyticsData.criticalNotifications}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">影響鄉鎮</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {viewMode === 'city' 
-                ? analyticsData.regionStats.reduce((total, region) => total + (region.districts?.length || 0), 0)
-                : analyticsData.regionStats.length
-              }
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">緊急比例</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {analyticsData.totalNotifications > 0 
-                ? Math.round((analyticsData.criticalNotifications / analyticsData.totalNotifications) * 100)
-                : 0}%
-            </div>
-            {viewMode === 'district' && selectedCity && (
-              <p className="text-xs text-muted-foreground mt-1">
-                {selectedCity === '全部(不指定地區的全部用戶廣播通知)' ? '全國廣播' : selectedCity}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4" key={`stats-${viewMode}-${selectedCity}`}>
+        <StatTile
+          label="總通知數量"
+          value={analyticsData.totalNotifications.toLocaleString()}
+          icon={<Bell className="size-4" />}
+          sub={viewMode === 'district' && selectedCity ? (selectedCity === '全部(不指定地區的全部用戶廣播通知)' ? '全國廣播' : selectedCity) : undefined}
+        />
+        <StatTile
+          label="緊急通知"
+          value={analyticsData.criticalNotifications.toLocaleString()}
+          icon={<AlertTriangle className="size-4" />}
+          accent="red"
+        />
+        <StatTile
+          label="影響鄉鎮"
+          value={(viewMode === 'city'
+            ? analyticsData.regionStats.reduce((total, region) => total + (region.districts?.length || 0), 0)
+            : analyticsData.regionStats.length).toLocaleString()}
+          icon={<MapPin className="size-4" />}
+          accent="blue"
+        />
+        <StatTile
+          label="緊急比例"
+          value={`${analyticsData.totalNotifications > 0 ? Math.round((analyticsData.criticalNotifications / analyticsData.totalNotifications) * 100) : 0}%`}
+          icon={<Percent className="size-4" />}
+          accent="amber"
+        />
       </div>
 
       {/* 推播發送量與壓力(時間視窗內、全地區) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">累積發送數量</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">{deliveryStats.total.toLocaleString()}</div>
-            <p className="mt-1 flex items-center gap-2.5 text-xs text-muted-foreground tabular-nums">
-              <span className="inline-flex items-center gap-1"><AppleIcon className="size-3" />{deliveryStats.ios.toLocaleString()}</span>
-              <span className="inline-flex items-center gap-1"><AndroidIcon className="size-3.5" />{deliveryStats.android.toLocaleString()}</span>
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-1.5 text-sm font-medium"><AppleIcon className="size-3.5" />iOS 推播壓力</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">
-              {deliveryStats.iosPressure === null ? '—' : `${(deliveryStats.iosPressure * 100).toFixed(deliveryStats.iosPressure < 0.1 ? 2 : 1)}%`}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-1.5 text-sm font-medium"><AndroidIcon className="size-4" />Android 推播壓力</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold tabular-nums">
-              {deliveryStats.androidPressure === null ? '—' : `${(deliveryStats.androidPressure * 100).toFixed(deliveryStats.androidPressure < 0.1 ? 2 : 1)}%`}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="space-y-3">
+        <h2 className="px-0.5 text-sm font-semibold">
+          推播發送 <span className="font-normal text-muted-foreground/70">· 時間視窗內 · 全地區</span>
+        </h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <StatTile
+            label="累積發送數量"
+            value={deliveryStats.total.toLocaleString()}
+            icon={<Send className="size-4" />}
+            accent="green"
+            sub={
+              <span className="flex items-center gap-2.5">
+                <span className="inline-flex items-center gap-1"><AppleIcon className="size-2.5" />{deliveryStats.ios.toLocaleString()}</span>
+                <span className="inline-flex items-center gap-1"><AndroidIcon className="size-3" />{deliveryStats.android.toLocaleString()}</span>
+              </span>
+            }
+          />
+          <PressureTile label="iOS 推播壓力" icon={<AppleIcon className="size-3" />} pressure={deliveryStats.iosPressure} />
+          <PressureTile label="Android 推播壓力" icon={<AndroidIcon className="size-3.5" />} pressure={deliveryStats.androidPressure} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
