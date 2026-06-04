@@ -3,20 +3,33 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { NotifyHistoryResponse, NotificationRecord } from '@/types/notify';
 import type { LimitSetting } from '@/contexts/LimitContext';
+import { TimeFilter, computeTimeRange } from '@/components/TimeFilter';
 
-export function useNotifications(limit: LimitSetting = 'all') {
+export function useNotifications(
+  limit: LimitSetting = 'all',
+  timeFilter: TimeFilter = 'all',
+  startDate = '',
+  endDate = '',
+) {
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const fetchData = useCallback(async (fetchLimit: LimitSetting, signal?: AbortSignal) => {
+  const fetchData = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
 
     try {
+      const params = new URLSearchParams();
+      params.set('limit', String(limit));
+      // 把時間範圍下推到後端(start/end 於此刻計算,以避免每次 render 變動)
+      const { start, end } = computeTimeRange(timeFilter, startDate, endDate);
+      if (start !== undefined) params.set('start', String(start));
+      if (end !== undefined) params.set('end', String(end));
+
       const response = await fetch(
-        `https://api.core-tnn1.exptech.dev/api/v2/notify/history?limit=${fetchLimit}`,
+        `https://api.core-tnn1.exptech.dev/api/v2/notify/history?${params.toString()}`,
         signal ? { signal } : undefined
       );
 
@@ -34,20 +47,20 @@ export function useNotifications(limit: LimitSetting = 'all') {
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, []);
+  }, [limit, timeFilter, startDate, endDate]);
 
   useEffect(() => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    fetchData(limit, controller.signal);
+    fetchData(controller.signal);
     return () => controller.abort();
-  }, [limit, fetchData]);
+  }, [fetchData]);
 
   const refetch = useCallback(() => {
     abortRef.current?.abort();
-    fetchData(limit);
-  }, [limit, fetchData]);
+    fetchData();
+  }, [fetchData]);
 
   return { notifications, loading, error, refetch };
 }

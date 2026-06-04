@@ -5,6 +5,8 @@ export interface NotificationRecord {
   codes: number[];
   Polygons: (Polygon | GeoJSONFeature)[];
   critical: boolean;
+  /** 推播送達數(後端統計;SNS 廣播或舊資料為 0) */
+  devices?: { ios: number; android: number };
 }
 
 export interface Polygon {

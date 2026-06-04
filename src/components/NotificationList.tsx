@@ -89,9 +89,18 @@ export default function NotificationList({
                         )}
                       </div>
                       <p className="mb-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{notification.body.split('\n')[0]}</p>
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground/80">
-                        <time>{new Date(notification.timestamp).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time>
-                        {notification.Polygons?.length > 0 && <span>{notification.Polygons.length} 區域</span>}
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground/80">
+                        <time className="shrink-0">{new Date(notification.timestamp).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {notification.Polygons?.length > 0 && <span>{notification.Polygons.length} 區域</span>}
+                          {(() => {
+                            const ios = notification.devices?.ios ?? 0;
+                            const android = notification.devices?.android ?? 0;
+                            return ios + android > 0
+                              ? <span className="tabular-nums" title={`iOS ${ios} / Android ${android}`}>📲 {(ios + android).toLocaleString()}</span>
+                              : <span className="opacity-55">無資料</span>;
+                          })()}
+                        </div>
                       </div>
                     </div>
                   </div>

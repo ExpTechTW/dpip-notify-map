@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 export type TimeFilter = 'recent1h' | 'recent3h' | 'recent6h' | 'recent12h' | 'recent24h' | 'all' | 'timeSlot';
 
@@ -35,6 +34,23 @@ const DURATION_MAP: Record<string, number> = {
 };
 
 const VALID_FILTERS = new Set<string>(TIME_FILTER_OPTIONS.map(o => o.value));
+
+/** 由時間篩選狀態算出 { start, end }(ms);供前端篩選與後端查詢共用 */
+export function computeTimeRange(
+  timeFilter: TimeFilter,
+  startDate: string,
+  endDate: string,
+): { start?: number; end?: number } {
+  const duration = DURATION_MAP[timeFilter];
+  if (duration) return { start: Date.now() - duration };
+  if (timeFilter === 'timeSlot' && startDate && endDate) {
+    return {
+      start: new Date(startDate).getTime(),
+      end: new Date(endDate + 'T23:59:59').getTime(),
+    };
+  }
+  return {};
+}
 
 export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
   timeFilter, startDate, endDate,
@@ -88,20 +104,40 @@ export const TimeFilterComponent: React.FC<TimeFilterProps> = ({
   );
 };
 
-export const useTimeFilter = () => {
-  const searchParams = useSearchParams();
+interface TimeFilterContextValue {
+  timeFilter: TimeFilter;
+  startDate: string;
+  endDate: string;
+  handleTimeFilterChange: (filter: TimeFilter) => void;
+  handleStartDateChange: (date: string) => void;
+  handleEndDateChange: (date: string) => void;
+  handleApplyTimeSlot: () => void;
+  filterNotificationsByTime: <T extends { timestamp: number }>(notifications: T[]) => T[];
+  updateURL: (updates: { timeFilter?: TimeFilter | null; startDate?: string; endDate?: string }) => void;
+}
+
+const TimeFilterContext = createContext<TimeFilterContextValue | undefined>(undefined);
+
+/**
+ * 時間篩選的單一狀態來源(掛在 DataProvider 之上),
+ * 讓 page / analytics / useFilteredNotifications 共用同一份狀態,
+ * 並讓 DataContext 能據此把時間範圍下推到後端查詢。
+ */
+export function TimeFilterProvider({ children }: { children: React.ReactNode }) {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  // mount 後從 URL 同步初始值(與 LimitProvider 一致,避免 useSearchParams 的 Suspense 需求)
   useEffect(() => {
-    const tf = searchParams.get('timeFilter');
+    const params = new URLSearchParams(window.location.search);
+    const tf = params.get('timeFilter');
     if (tf && VALID_FILTERS.has(tf)) setTimeFilter(tf as TimeFilter);
-    const sd = searchParams.get('startDate');
-    const ed = searchParams.get('endDate');
+    const sd = params.get('startDate');
+    const ed = params.get('endDate');
     if (sd) setStartDate(sd);
     if (ed) setEndDate(ed);
-  }, [searchParams]);
+  }, []);
 
   const updateURL = useCallback((updates: {
     timeFilter?: TimeFilter | null;
@@ -148,31 +184,30 @@ export const useTimeFilter = () => {
   const filterNotificationsByTime = useCallback(
     <T extends { timestamp: number }>(notifications: T[]): T[] => {
       if (!notifications.length) return [];
-
-      const duration = DURATION_MAP[timeFilter];
-      if (duration) {
-        const cutoff = Date.now() - duration;
-        return notifications.filter(n => n.timestamp >= cutoff);
-      }
-
-      if (timeFilter === 'timeSlot' && startDate && endDate) {
-        const start = new Date(startDate).getTime();
-        const end = new Date(endDate + 'T23:59:59').getTime();
-        return notifications.filter(n => n.timestamp >= start && n.timestamp <= end);
-      }
-
-      return notifications;
+      const { start, end } = computeTimeRange(timeFilter, startDate, endDate);
+      if (start === undefined && end === undefined) return notifications;
+      return notifications.filter(
+        n => (start === undefined || n.timestamp >= start) && (end === undefined || n.timestamp <= end),
+      );
     },
     [timeFilter, startDate, endDate]
   );
 
-  return {
+  const value: TimeFilterContextValue = {
     timeFilter, startDate, endDate,
     handleTimeFilterChange,
     handleStartDateChange: setStartDate,
     handleEndDateChange: setEndDate,
     handleApplyTimeSlot,
     filterNotificationsByTime,
-    updateURL
+    updateURL,
   };
+
+  return <TimeFilterContext.Provider value={value}>{children}</TimeFilterContext.Provider>;
+}
+
+export const useTimeFilter = (): TimeFilterContextValue => {
+  const ctx = useContext(TimeFilterContext);
+  if (!ctx) throw new Error('useTimeFilter must be used within a TimeFilterProvider');
+  return ctx;
 };

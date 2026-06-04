@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useRegionData } from '@/hooks/useRegionData';
 import { useLimitContext } from '@/contexts/LimitContext';
+import { useTimeFilter } from '@/components/TimeFilter';
 import { precomputeAllRegionMatches } from '@/utils/regionMatcher';
 import type { NotificationRecord } from '@/types/notify';
 import type { RegionData } from '@/hooks/useRegionData';
@@ -37,13 +38,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [precomputeLoading, setPrecomputeLoading] = useState(false);
 
   const { limitSetting } = useLimitContext();
+  const { timeFilter, startDate, endDate } = useTimeFilter();
 
   const {
     notifications,
     loading: notificationsLoading,
     error: notificationsError,
     refetch: refetchNotifications
-  } = useNotifications(limitSetting);
+  } = useNotifications(limitSetting, timeFilter, startDate, endDate);
   
   const {
     regionData,
@@ -80,11 +82,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const isDataReady =
     !notificationsLoading &&
     !regionDataLoading &&
-    !precomputeLoading &&
-    precomputeCompleted &&
-    notifications.length > 0 &&
     regionData !== null &&
-    gridMatrix !== null;
+    gridMatrix !== null &&
+    // 0 筆通知也算「就緒」(顯示空狀態,不需區域預計算);有資料才等預計算完成
+    (notifications.length === 0 || (!precomputeLoading && precomputeCompleted));
   
   const value: DataContextType = {
     notifications,

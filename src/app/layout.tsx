@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { LimitProvider } from "@/contexts/LimitContext";
+import { TimeFilterProvider } from "@/components/TimeFilter";
 import { DataProvider } from "@/contexts/DataContext";
 
 const fontSans = Plus_Jakarta_Sans({
@@ -37,9 +38,11 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <LimitProvider>
-            <DataProvider>
-              {children}
-            </DataProvider>
+            <TimeFilterProvider>
+              <DataProvider>
+                {children}
+              </DataProvider>
+            </TimeFilterProvider>
           </LimitProvider>
         </ThemeProvider>
       </body>
