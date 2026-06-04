@@ -2,12 +2,11 @@
 
 import { useState, useMemo, Suspense, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { useLimitSync } from '@/hooks/useLimitSync';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
-import { ArrowLeft, Filter, X, ChevronRight, AlertTriangle, Bell, MapPin, Percent, Send } from 'lucide-react';
+import { ArrowLeft, Filter, X, ChevronRight, AlertTriangle, Bell, MapPin, Percent, Send, BarChart3 } from 'lucide-react';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { TimeFilterComponent, useTimeFilter, computeTimeRange } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
@@ -132,7 +131,6 @@ function AnalyticsContent() {
   const [viewMode, setViewMode] = useState<ViewMode>('city');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  const { limitSetting, updateLimit } = useLimitSync();
   
   const router = useRouter();
   
@@ -148,14 +146,9 @@ function AnalyticsContent() {
         params.set('endDate', endDate);
       }
     }
-    
-    // 保留數量限制參數
-    if (limitSetting !== 100) {
-      params.set('limit', limitSetting.toString());
-    }
-    
+
     return params.toString() ? `/?${params.toString()}` : '/';
-  }, [timeFilter, startDate, endDate, limitSetting]);
+  }, [timeFilter, startDate, endDate]);
 
   // 緩存基本統計數據
   const basicStats = useMemo(() => {
@@ -455,7 +448,10 @@ function AnalyticsContent() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">通知統計分析</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl">
+              <BarChart3 className="size-6 text-primary sm:size-7" />
+              通知統計分析
+            </h1>
             {viewMode === 'district' && selectedCity && (
               <div className="flex items-center gap-2 mt-1">
                 <Filter className="w-4 h-4 text-muted-foreground" />
@@ -515,41 +511,6 @@ function AnalyticsContent() {
               onApplyTimeSlot={handleApplyTimeSlot}
               compact={true}
             />
-          </div>
-          
-          <div className="flex gap-1 rounded-xl border border-border/50 bg-muted/35 p-1">
-            <Button
-              variant={limitSetting === 100 ? 'default' : 'ghost'}
-              size="sm"
-              className="rounded-lg"
-              onClick={() => updateLimit(100)}
-            >
-              100
-            </Button>
-            <Button
-              variant={limitSetting === 500 ? 'default' : 'ghost'}
-              size="sm"
-              className="rounded-lg"
-              onClick={() => updateLimit(500)}
-            >
-              500
-            </Button>
-            <Button
-              variant={limitSetting === 1000 ? 'default' : 'ghost'}
-              size="sm"
-              className="rounded-lg"
-              onClick={() => updateLimit(1000)}
-            >
-              1000
-            </Button>
-            <Button
-              variant={limitSetting === 'all' ? 'default' : 'ghost'}
-              size="sm"
-              className="rounded-lg"
-              onClick={() => updateLimit('all')}
-            >
-              全部
-            </Button>
           </div>
         </div>
       </div>
@@ -650,14 +611,16 @@ function AnalyticsContent() {
                   }
                   
                   return (
-                    <div key={type} className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">{type}</Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {percentage}%
+                    <div key={type} className="space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate font-medium">{type}</span>
+                        <span className="shrink-0 tabular-nums text-muted-foreground">
+                          {count.toLocaleString()} <span className="text-muted-foreground/60">· {percentage}%</span>
                         </span>
                       </div>
-                      <span className="font-medium">{count}</span>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-primary/70 transition-all duration-500" style={{ width: `${Math.max(percentage, 2)}%` }} />
+                      </div>
                     </div>
                   );
                 })}
@@ -680,22 +643,28 @@ function AnalyticsContent() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {analyticsData.regionStats.slice(0, 10).map((region, index) => (
-                  <div key={`${region.name}-${index}`} className="flex justify-between items-center p-2 -m-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-muted-foreground w-6">
-                        #{index + 1}
-                      </span>
-                      <span className="font-medium">{region.name}</span>
-                      {region.criticalCount > 0 && (
-                        <Badge variant="destructive" className="text-xs">
-                          緊急 {region.criticalCount}
-                        </Badge>
-                      )}
+                {analyticsData.regionStats.slice(0, 10).map((region, index) => {
+                  const rank = index + 1;
+                  const medal =
+                    rank === 1 ? 'bg-amber-400/20 text-amber-600 dark:text-amber-400'
+                      : rank === 2 ? 'bg-slate-400/20 text-slate-500 dark:text-slate-300'
+                        : rank === 3 ? 'bg-orange-400/20 text-orange-600 dark:text-orange-400'
+                          : 'bg-muted text-muted-foreground';
+                  return (
+                    <div key={`${region.name}-${index}`} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/40">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className={`flex size-6 shrink-0 items-center justify-center rounded-md text-xs font-bold tabular-nums ${medal}`}>{rank}</span>
+                        <span className="truncate font-medium">{region.name}</span>
+                        {region.criticalCount > 0 && (
+                          <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px]">
+                            緊急 {region.criticalCount}
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="shrink-0 font-bold tabular-nums">{region.count.toLocaleString()}</span>
                     </div>
-                    <span className="font-bold">{region.count}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
@@ -721,9 +690,9 @@ function AnalyticsContent() {
               const isSelected = viewMode === 'district' && selectedDistrict === region.name;
               
               return (
-              <div key={`${region.name}-detail-${index}`} 
-                   className={`border rounded-lg p-4 cursor-pointer transition-colors group ${
-                     isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted/30'
+              <div key={`${region.name}-detail-${index}`}
+                   className={`rounded-xl border p-4 cursor-pointer transition-all group ${
+                     isSelected ? 'border-primary/50 bg-primary/[0.06] shadow-sm' : 'border-border/50 hover:border-border hover:bg-muted/30'
                    }`}
                    onClick={() => {
                      if (viewMode === 'city') {
@@ -746,10 +715,7 @@ function AnalyticsContent() {
                              params.set('endDate', endDate);
                            }
                          }
-                         if (limitSetting !== 100) {
-                           params.set('limit', limitSetting.toString());
-                         }
-                         
+
                           router.push(`/?${params.toString()}`);
                        } else {
                          // 未選中，選中該鄉鎮區
@@ -802,10 +768,7 @@ function AnalyticsContent() {
                               params.set('endDate', endDate);
                             }
                           }
-                          if (limitSetting !== 100) {
-                            params.set('limit', limitSetting.toString());
-                          }
-                          
+
                           router.push(`/?${params.toString()}`);
                         }}
                       >
@@ -846,12 +809,14 @@ function AnalyticsContent() {
                         .map(([type, count]) => {
                           const percentage = Math.round((count / region.count) * 100);
                           return (
-                            <div key={type} className="flex justify-between items-center">
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="text-xs">{type}</Badge>
-                                <span className="text-xs text-muted-foreground">{percentage}%</span>
+                            <div key={type} className="space-y-1">
+                              <div className="flex items-center justify-between gap-2 text-xs">
+                                <span className="truncate">{type}</span>
+                                <span className="shrink-0 tabular-nums text-muted-foreground">{count} · {percentage}%</span>
                               </div>
-                              <span className="text-sm font-medium">{count}</span>
+                              <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                                <div className="h-full rounded-full bg-primary/60" style={{ width: `${Math.max(percentage, 2)}%` }} />
+                              </div>
                             </div>
                           );
                         })}
@@ -885,10 +850,7 @@ function AnalyticsContent() {
                     params.set('endDate', endDate);
                   }
                 }
-                if (limitSetting !== 100) {
-                  params.set('limit', limitSetting.toString());
-                }
-                
+
                 router.push(`/?${params.toString()}`);
               }}
               className="w-full"

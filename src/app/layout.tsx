@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
-import { LimitProvider } from "@/contexts/LimitContext";
 import { TimeFilterProvider } from "@/components/TimeFilter";
 import { DataProvider } from "@/contexts/DataContext";
 
@@ -37,13 +36,11 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <LimitProvider>
-            <TimeFilterProvider>
-              <DataProvider>
-                {children}
-              </DataProvider>
-            </TimeFilterProvider>
-          </LimitProvider>
+          <TimeFilterProvider>
+            <DataProvider>
+              {children}
+            </DataProvider>
+          </TimeFilterProvider>
         </ThemeProvider>
       </body>
     </html>

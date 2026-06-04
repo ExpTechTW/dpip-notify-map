@@ -2,12 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { NotifyHistoryResponse, NotificationRecord } from '@/types/notify';
-import type { LimitSetting } from '@/contexts/LimitContext';
 import { TimeFilter, computeTimeRange } from '@/components/TimeFilter';
 
 export function useNotifications(
-  limit: LimitSetting = 'all',
-  timeFilter: TimeFilter = 'all',
+  timeFilter: TimeFilter = 'recent3h',
   startDate = '',
   endDate = '',
 ) {
@@ -22,7 +20,7 @@ export function useNotifications(
 
     try {
       const params = new URLSearchParams();
-      params.set('limit', String(limit));
+      params.set('limit', 'all'); // 純時間查詢:回傳時間視窗內全部
       // 把時間範圍下推到後端(start/end 於此刻計算,以避免每次 render 變動)
       const { start, end } = computeTimeRange(timeFilter, startDate, endDate);
       if (start !== undefined) params.set('start', String(start));
@@ -47,7 +45,7 @@ export function useNotifications(
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
-  }, [limit, timeFilter, startDate, endDate]);
+  }, [timeFilter, startDate, endDate]);
 
   useEffect(() => {
     abortRef.current?.abort();

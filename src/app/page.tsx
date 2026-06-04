@@ -2,7 +2,6 @@
 
 import { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useLimitSync } from '@/hooks/useLimitSync';
 import NotificationList from '@/components/NotificationList';
 import PhonePreview from '@/components/PhonePreview';
 import MapView from '@/components/MapView';
@@ -17,13 +16,6 @@ import { TimeFilterComponent, useTimeFilter, TimeFilter, TIME_FILTER_OPTIONS } f
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
-
-const LIMIT_OPTIONS = [
-  { value: 100 as const, label: '100' },
-  { value: 500 as const, label: '500' },
-  { value: 1000 as const, label: '1K' },
-  { value: 'all' as const, label: '全部' },
-];
 
 const DPIP_ICON_URL = 'https://raw.githubusercontent.com/ExpTechTW/DPIP-Pocket/refs/heads/main/assets/DPIP.png';
 const DPIP_REPO_URL = 'https://github.com/ExpTechTW/DPIP-Pocket';
@@ -68,7 +60,6 @@ function RegionBadge({ label, onClear }: { label: string; onClear: () => void })
 }
 
 function HomeContent() {
-  const { limitSetting, updateLimit } = useLimitSync();
   const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
   const [selectedNotification, setSelectedNotification] = useState<NotificationRecord | null>(null);
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
@@ -92,9 +83,8 @@ function HomeContent() {
       p.set('timeFilter', timeFilter);
       if (timeFilter === 'timeSlot' && startDate && endDate) { p.set('startDate', startDate); p.set('endDate', endDate); }
     }
-    if (limitSetting !== 100) p.set('limit', limitSetting.toString());
     return p.toString() ? `/analytics?${p}` : '/analytics';
-  }, [timeFilter, startDate, endDate, limitSetting]);
+  }, [timeFilter, startDate, endDate]);
 
   useEffect(() => {
     const regionParam = searchParams.get('region');
@@ -196,9 +186,6 @@ function HomeContent() {
             <SelectWithChevron value={timeFilter} onChange={e => handleTimeFilterChange(e.target.value as TimeFilter)} className="min-w-[5.5rem]">
               {TIME_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </SelectWithChevron>
-            <SelectWithChevron value={limitSetting === 'all' ? 'all' : String(limitSetting)} onChange={e => { const v = e.target.value; updateLimit(v === 'all' ? 'all' : Number(v) as 100 | 500 | 1000); }} className="min-w-[4.5rem]">
-              {LIMIT_OPTIONS.map(o => <option key={String(o.value)} value={String(o.value)}>{o.label}</option>)}
-            </SelectWithChevron>
             {regionData && (
               <>
                 <SelectWithChevron value={selectedCity || ''} onChange={e => onCityChange(e.target.value)} className="w-full min-w-[6.5rem]">
@@ -248,14 +235,6 @@ function HomeContent() {
               {TIME_FILTER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </SelectWithChevron>
 
-            <div className="hidden items-center rounded-xl border border-border/50 bg-muted/35 p-1 md:flex">
-              {LIMIT_OPTIONS.map(o => (
-                <button key={o.value} type="button" onClick={() => updateLimit(o.value)} className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${limitSetting === o.value ? 'bg-background text-foreground shadow-sm ring-1 ring-black/[0.04] dark:ring-white/10' : 'text-muted-foreground hover:text-foreground'}`}>
-                  {o.label}
-                </button>
-              ))}
-            </div>
-
             {regionData && (
               <div className="hidden gap-2 md:flex">
                 <SelectWithChevron value={selectedCity || ''} onChange={e => onCityChange(e.target.value)} className="w-full min-w-[7.5rem]">
@@ -290,7 +269,7 @@ function HomeContent() {
       {/* ── Main content ── */}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden p-2 pb-1 sm:gap-3 sm:p-3 md:flex-row md:pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:gap-4 lg:p-4">
         {loading && (
-          <LoadingSpinner overlay size="md" message="載入通知資料中..." description={`正在獲取${limitSetting === 'all' ? '全部' : ` ${limitSetting} 筆`}資料`} />
+          <LoadingSpinner overlay size="md" message="載入通知資料中..." description="正在獲取通知資料" />
         )}
 
         {error && !loading && (

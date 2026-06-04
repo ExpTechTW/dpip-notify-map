@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useRegionData } from '@/hooks/useRegionData';
-import { useLimitContext } from '@/contexts/LimitContext';
 import { useTimeFilter } from '@/components/TimeFilter';
 import { precomputeAllRegionMatches } from '@/utils/regionMatcher';
 import type { NotificationRecord } from '@/types/notify';
@@ -37,7 +36,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [precomputeCompleted, setPrecomputeCompleted] = useState(false);
   const [precomputeLoading, setPrecomputeLoading] = useState(false);
 
-  const { limitSetting } = useLimitContext();
   const { timeFilter, startDate, endDate } = useTimeFilter();
 
   const {
@@ -45,7 +43,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     loading: notificationsLoading,
     error: notificationsError,
     refetch: refetchNotifications
-  } = useNotifications(limitSetting, timeFilter, startDate, endDate);
+  } = useNotifications(timeFilter, startDate, endDate);
   
   const {
     regionData,

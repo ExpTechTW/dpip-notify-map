@@ -124,11 +124,11 @@ const TimeFilterContext = createContext<TimeFilterContextValue | undefined>(unde
  * 並讓 DataContext 能據此把時間範圍下推到後端查詢。
  */
 export function TimeFilterProvider({ children }: { children: React.ReactNode }) {
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('recent3h');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // mount 後從 URL 同步初始值(與 LimitProvider 一致,避免 useSearchParams 的 Suspense 需求)
+  // mount 後從 URL 同步初始值(直接讀 window.location.search,避免 useSearchParams 的 Suspense 需求)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tf = params.get('timeFilter');
@@ -176,9 +176,16 @@ export function TimeFilterProvider({ children }: { children: React.ReactNode }) 
   }, [updateURL]);
 
   const handleApplyTimeSlot = useCallback(() => {
-    if (startDate && endDate) {
-      updateURL({ timeFilter: 'timeSlot', startDate, endDate });
+    if (!startDate || !endDate) return;
+    // 自訂範圍上限 90 天(後端保留 91 天):超過則把起始日夾到「結束日 − 90 天」
+    const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+    let start = startDate;
+    const span = new Date(endDate).getTime() - new Date(startDate).getTime();
+    if (span > NINETY_DAYS_MS) {
+      start = new Date(new Date(endDate).getTime() - NINETY_DAYS_MS).toISOString().slice(0, 10);
+      setStartDate(start);
     }
+    updateURL({ timeFilter: 'timeSlot', startDate: start, endDate });
   }, [startDate, endDate, updateURL]);
 
   const filterNotificationsByTime = useCallback(
