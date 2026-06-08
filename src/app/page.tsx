@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
+import { useState, useEffect, Suspense, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import NotificationList from '@/components/NotificationList';
 import PhonePreview from '@/components/PhonePreview';
@@ -22,6 +22,10 @@ const DPIP_ICON_URL = 'https://raw.githubusercontent.com/ExpTechTW/DPIP-Pocket/r
 const DPIP_REPO_URL = 'https://github.com/ExpTechTW/DPIP-Pocket';
 
 const CONTROL_SELECT = 'h-10 touch-manipulation appearance-none rounded-xl border border-border/60 bg-background/90 pl-3 pr-8 text-xs font-medium shadow-sm transition-[box-shadow,border-color] hover:border-border focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30 sm:h-9';
+
+// 選取一則通知後,給地圖這段時間播放運鏡(需與 MapView 的 fitBounds duration 同步)。
+// 期間的點擊不立即切換,而是合併成「最後一個」,等運鏡結束再套用 → 避免使用者切換過快。
+const MAP_ANIM_MS = 1100;
 
 function DpipLogo({ size = 32 }: { size?: number }) {
   return (
@@ -66,6 +70,11 @@ function HomeContent() {
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
+  const [throttled, setThrottled] = useState(false);  // 切換過快、選取被延後 → 清單顯示載入遮罩
+  const busyRef = useRef(false);                        // 同步的忙碌閘門(運鏡冷卻中);用 ref 避免 render 落後造成競態
+  const pendingSelectRef = useRef<NotificationRecord | null>(null);
+  const busyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applyRef = useRef<(n: NotificationRecord) => void>(() => {});
   const {
     timeFilter, startDate, endDate,
     handleTimeFilterChange, handleStartDateChange, handleEndDateChange, handleApplyTimeSlot,
@@ -104,14 +113,17 @@ function HomeContent() {
 
   useEffect(() => {
     if (!notifications.length) { setSelectedNotification(null); return; }
-    const t = searchParams.get('t');
+    // 僅在資料(notifications)變動時,依 URL 的 ?t 還原選取(deep-link / 重新整理 / 換時間範圍)。
+    // 不可掛在 searchParams 上:點擊已直接 setSelectedNotification,若再隨每次 ?t 推送回放,
+    // 高速連續切換時延遲/亂序抵達的 ?t 會反覆覆蓋選取,使選中狀態短暫跳動、與地圖不同步。
+    const t = new URLSearchParams(window.location.search).get('t');
     if (t) {
       const ts = parseInt(t, 10);
       setSelectedNotification(notifications.find(n => n.timestamp === ts) || notifications[0]);
     } else {
       setSelectedNotification(notifications[0]);
     }
-  }, [notifications, searchParams]);
+  }, [notifications]);
 
   const pushParams = useCallback((updater: (p: URLSearchParams) => void) => {
     const p = new URLSearchParams(searchParams);
@@ -119,11 +131,38 @@ function HomeContent() {
     router.push(`?${p}`, { scroll: false });
   }, [router, searchParams]);
 
-  const handleSelectNotification = useCallback((n: NotificationRecord) => {
+  const applyAndCooldown = useCallback((n: NotificationRecord) => {
     setSelectedNotification(n);
     pushParams(p => p.set('t', n.timestamp.toString()));
-    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) setMobileTab('map');
+    busyRef.current = true;
+    if (busyTimerRef.current) clearTimeout(busyTimerRef.current);
+    busyTimerRef.current = setTimeout(() => {
+      // 冷卻結束:期間若累積了「最後意圖」就套用它並重新冷卻;否則解除忙碌、收起遮罩。
+      // 由 timer(必定觸發)負責收尾,不靠會落後的 state,杜絕掉選取的競態。
+      if (pendingSelectRef.current) {
+        const p = pendingSelectRef.current;
+        pendingSelectRef.current = null;
+        applyRef.current(p);
+      } else {
+        busyRef.current = false;
+        setThrottled(false);
+      }
+    }, MAP_ANIM_MS);
   }, [pushParams]);
+  applyRef.current = applyAndCooldown;
+
+  const handleSelectNotification = useCallback((n: NotificationRecord) => {
+    // 運鏡冷卻中再點 → 記下「最後意圖」並顯示載入遮罩,等運鏡結束再套用(給地圖時間、避免過快切換)。
+    if (busyRef.current) {
+      pendingSelectRef.current = n;
+      setThrottled(true);
+      return;
+    }
+    applyAndCooldown(n);
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) setMobileTab('map');
+  }, [applyAndCooldown]);
+
+  useEffect(() => () => { if (busyTimerRef.current) clearTimeout(busyTimerRef.current); }, []);
 
   const clearRegionFilter = useCallback(() => {
     setSelectedCity(null); setSelectedDistrict(null); setRegionFilter(null);
@@ -288,7 +327,7 @@ function HomeContent() {
         <div className="home-desktop-only min-h-0 min-w-0 flex-1 flex-row">
           <div className="home-xl-three-col min-h-0 min-w-0 w-full flex-1 gap-3 overflow-hidden">
             <Card className="h-full w-80 min-w-0 flex-shrink-0 !gap-0 !py-0">
-              <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
+              <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} busy={throttled} />
             </Card>
             <Card className="flex h-full w-[min(22rem,32vw)] max-w-[450px] min-w-0 flex-shrink-0 !gap-0 !py-0 overflow-hidden bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
               <PhonePreview notification={selectedNotification} />
@@ -301,7 +340,7 @@ function HomeContent() {
           {/* md~xl 兩欄 */}
           <div className="home-tablet-two-col min-h-0 min-w-0 w-full flex-1 gap-2 overflow-hidden sm:gap-3">
             <Card className="flex h-full w-[min(100%,18rem)] min-w-[10.5rem] max-w-[20rem] flex-shrink-0 !gap-0 !py-0 md:w-64 lg:w-72">
-              <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
+              <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} busy={throttled} />
             </Card>
             <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden sm:gap-3">
               <Card className="flex h-[min(36vh,22rem)] max-h-[min(42vh,26rem)] min-h-[11rem] flex-shrink-0 !gap-0 !py-0 overflow-hidden bg-gradient-to-b from-primary/[0.06] via-muted/25 to-muted/45">
@@ -319,7 +358,7 @@ function HomeContent() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-0.5 sm:px-1">
             <Card className="flex h-full min-h-0 min-w-0 flex-1 flex-col !gap-0 !py-0 overflow-hidden rounded-2xl border-border/60 shadow-md">
               {mobileTab === 'list'
-                ? <NotificationList compactHeader notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} />
+                ? <NotificationList compactHeader notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} busy={throttled} />
                 : <MapView notification={selectedNotification} />
               }
             </Card>

@@ -13,6 +13,8 @@ interface NotificationListProps {
   selectedNotification: NotificationRecord | null;
   onSelectNotification: (notification: NotificationRecord) => void;
   compactHeader?: boolean;
+  /** 地圖運鏡中、選取被節流(切換過快)→ 顯示輕量載入遮罩,提示稍候。不擋點擊(仍合併成最後選取)。 */
+  busy?: boolean;
 }
 
 export default function NotificationList({
@@ -20,6 +22,7 @@ export default function NotificationList({
   selectedNotification,
   onSelectNotification,
   compactHeader = false,
+  busy = false,
 }: NotificationListProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
@@ -52,7 +55,16 @@ export default function NotificationList({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
+      {/* 切換過快時的輕量載入遮罩(提示「給地圖時間」)。pointer-events-none → 不擋點擊,
+          點擊仍會被合併成最後選取,等運鏡結束套用。 */}
+      <div className={`pointer-events-none absolute inset-0 z-10 flex items-start justify-center pt-3 transition-opacity duration-200 ${busy ? 'opacity-100' : 'opacity-0'}`} aria-hidden>
+        <div className="absolute inset-0 bg-background/30 backdrop-blur-[1.5px]" />
+        <div className="relative flex items-center gap-2 rounded-full border border-border/50 bg-card/95 px-3 py-1.5 text-xs font-medium text-muted-foreground shadow-sm">
+          <span className="size-3.5 animate-spin rounded-full border-2 border-primary/30 border-t-primary/80" />
+          地圖載入中…
+        </div>
+      </div>
       <div className="flex shrink-0 items-center justify-between border-b border-border/50 bg-muted/20 px-3 py-2">
         <span className="text-xs font-semibold text-muted-foreground">通知列表</span>
         {(!compactHeader || true) && (
