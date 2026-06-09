@@ -101,17 +101,21 @@ export default function MapView({ notification }: MapViewProps) {
   // 最新輸入放進 ref,讓 applySelection() 永遠讀到最新值且本身保持穩定(不需重建)。
   const notifRef = useRef<NotificationRecord | null>(notification);
   const regionRef = useRef<RegionData | null>(regionData);
+  const loadedRef = useRef(false); // 地圖是否已觸發過一次 load(之後就一直可用)
   notifRef.current = notification;
   regionRef.current = regionData;
 
   // 套用目前選取:建立圖層(一次)+ 更新高亮(setFilter/setData/setPaint)+ 慢速運鏡(fitBounds)。
-  // 就緒判斷只做一次:setData/setFilter 會讓 isStyleLoaded() 暫時轉 false,所以高亮與運鏡必須在
-  // 同一個就緒守衛內依序執行,不能各自再檢查一次(否則運鏡會被誤判未就緒而永遠不飛)。
+  // 就緒判斷用 loadedRef(首次 load 後恆為 true),不可用 isStyleLoaded():後者在圖磚載入時會
+  // 反覆轉回 false,若拿它當守衛,load 之後的更新(例:regionData 晚到才算得出 code 的範圍)
+  // 會被誤判未就緒、註冊永不再觸發的 once('load') → 第一個通知永遠不框。
   // 放慢 fitBounds duration,讓遠距切換的「拉遠看全台 → 拉近」看得清相對位置。
   const applySelection = useCallback(() => {
     const m = mapRef.current;
-    if (!m) return;
-    if (!m.isStyleLoaded()) { m.once('load', applySelection); return; }
+    // 已 load 過(loadedRef)或樣式此刻就緒(涵蓋 HMR 沿用舊 map、load 已錯過的情況)才套用;
+    // 兩者皆否 → 尚未就緒,由 load handler 補呼叫。
+    if (!m || (!loadedRef.current && !m.isStyleLoaded())) return;
+    loadedRef.current = true;
     try {
       // 通知圖層只建立一次(冪等:已存在就跳過),之後切換通知都只用 setData/setFilter 更新。
       if (!m.getLayer('notif-codes-fill')) {
@@ -184,8 +188,8 @@ export default function MapView({ notification }: MapViewProps) {
     m.keyboard.disableRotation();
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     m.on('error', () => {});
-    // 樣式就緒就套用目前選取(高亮 + 可見的慢速運鏡)。
-    m.on('load', applySelection);
+    // 首次 load:標記已載入並套用目前選取(高亮 + 可見的慢速運鏡)。
+    m.on('load', () => { loadedRef.current = true; applySelection(); });
 
     const container = mapContainer.current;
     const ro = typeof ResizeObserver !== 'undefined' && container
@@ -196,6 +200,7 @@ export default function MapView({ notification }: MapViewProps) {
 
     return () => {
       ro?.disconnect();
+      loadedRef.current = false;
       m.remove();
       mapRef.current = null;
     };
