@@ -29,27 +29,14 @@ interface AnalyticsData {
   typeDistribution: { [type: string]: number };
 }
 
+// 動態統計通知類型:標題本身即為類型,只需歸併「標題帶有變動資訊」的兩種通知
 function extractNotificationType(title: string): string {
-  if (title.includes('淹水感測')) return '📐 防災資訊(淹水感測)';
-  if (title.includes('短時強降雨紀錄')) return '🌧️ 防災資訊(短時強降雨紀錄)';
-  if (title.includes('天氣特報')) return '📊 天氣特報';
-  if (title.includes('雷雨即時訊息')) return '⛈️ 雷雨即時訊息';
-  if (title.includes('河川水位-警戒')) return '🚨 防災資訊(河川水位-警戒)';
-  if (title.includes('道路封閉')) return '🚙 防災資訊(道路封閉)';
-  if (title.includes('土石流紅色警戒')) return '🚨 防災資訊(土石流紅色警戒)';
-  if (title.includes('土石流黃色警戒')) return '⚠️ 防災資訊(土石流黃色警戒)';
-  if (title.includes('短時極端降雨紀錄')) return '🌧️ 防災資訊(短時極端降雨紀錄)';
-  if (title.includes('河川水位-注意')) return '⚠️ 防災資訊(河川水位-注意)';
-  if (title.includes('停班停課')) return '🏫 防災資訊(停班停課)';
-  if (title.includes('小區域有感地震')) return '🔔 地震報告 [小區域有感地震]';
-  if (title.includes('🔔 地震報告 ')) return '🔔 地震報告 [編號]';
-  if (title.includes('強震監視器')) return '📡 強震監視器';
-  if (title.includes('震度速報')) return '📨 震度速報';
-  if (title.includes('山區暴雨')) return '⛈️ 山區暴雨';
-  if (title.includes('⚠️ 地震速報')) return '⚠️ 地震速報';
-  if (title.includes('🌊 海嘯消息')) return '🌊 海嘯消息';
-  console.log(title);
-  return '其他';
+  // 天氣特報(觀測值) 標題帶有區域(例:📊 臺南市白河區 天氣特報(觀測值)),移除區域統一歸類
+  if (title.includes('天氣特報')) return '📊 ' + title.slice(title.indexOf('天氣特報'));
+  // 地震報告(非小區域有感)標題帶有編號,統一歸類避免每筆各自成類
+  if (title.includes('🔔 地震報告 ') && !title.includes('小區域有感地震')) return '🔔 地震報告 [編號]';
+  // 其他通知標題皆無區域/編號等變動資訊,直接以標題作為類型
+  return title;
 }
 
 const ACCENT: Record<string, string> = {
@@ -601,12 +588,16 @@ function AnalyticsContent() {
                         });
                         return acc;
                       }, {} as { [type: string]: number });
-                
-                
-                return Object.entries(distributionToShow);
+                // 動態統計類型眾多,只顯示前 9 名,其餘合併為「其他」
+                const sorted = Object.entries(distributionToShow)
+                  .filter(([, count]) => count > 0)
+                  .sort(([, a], [, b]) => b - a);
+                const TOP_N = 9;
+                if (sorted.length <= TOP_N + 1) return sorted;
+                const top = sorted.slice(0, TOP_N);
+                const restCount = sorted.slice(TOP_N).reduce((sum, [, count]) => sum + count, 0);
+                return [...top, ['其他', restCount] as [string, number]];
               })()
-                .filter(([, count]) => count > 0)
-                .sort(([,a], [,b]) => b - a)
                 .map(([type, count]) => {
                   const totalForPercent = viewMode === 'city' 
                     ? analyticsData.totalNotifications 
@@ -811,9 +802,16 @@ function AnalyticsContent() {
                     
                     <h4 className="font-medium mb-3">通知類型分布</h4>
                     <div className="space-y-2">
-                      {Object.entries(region.types)
-                        .filter(([, count]) => count > 0)
-                        .sort(([,a], [,b]) => b - a)
+                      {(() => {
+                        const sorted = Object.entries(region.types)
+                          .filter(([, count]) => count > 0)
+                          .sort(([, a], [, b]) => b - a);
+                        const TOP_N = 9;
+                        if (sorted.length <= TOP_N + 1) return sorted;
+                        const top = sorted.slice(0, TOP_N);
+                        const restCount = sorted.slice(TOP_N).reduce((sum, [, count]) => sum + count, 0);
+                        return [...top, ['其他', restCount] as [string, number]];
+                      })()
                         .map(([type, count]) => {
                           const percentage = Math.round((count / region.count) * 100);
                           return (
