@@ -7,10 +7,7 @@ WORKDIR /app
 # ConnectionRefused / FailedToOpenSocket 整批失敗。有 lockfile 就直接照鎖定版本裝。
 COPY package.json bun.lockb ./
 
-# 併發連線降到 16(預設 48),避免同時開太多 socket 被拒;偶發失敗再重試兩次。
-RUN bun install --frozen-lockfile --network-concurrency 16 \
- || (sleep 5  && bun install --frozen-lockfile --network-concurrency 8) \
- || (sleep 20 && bun install --frozen-lockfile --network-concurrency 4)
+RUN bun install
 
 COPY . .
 ENV NODE_ENV=production
