@@ -22,7 +22,7 @@ export const BASE_MAP_MODES: { value: BaseMapMode; label: string }[] = [
   { value: 'terrain', label: '地形' },
 ];
 
-const BASEMAP_TILES_URL = 'https://lb.exptech.dev/api/v1/map/tiles/tiles.json';
+const BASEMAP_TILE_URL = 'https://static.lb.exptech.dev/api/v1/map/tiles/{z}/{x}/{y}.pbf';
 const TERRAIN_TILE_URL = 'https://static.lb.exptech.dev/api/v1/map/terrain/{z}/{x}/{y}.png';
 const GIS_TILE_URL = 'https://static.lb.exptech.dev/api/v1/map/gsi/{z}/{x}/{y}.pbf';
 const GLYPHS_URL = 'https://cdn.jsdelivr.net/gh/exptechtw/map-assets/{fontstack}/{range}.pbf';
@@ -228,7 +228,15 @@ export function buildMapStyle(dark: boolean, mode: BaseMapMode): StyleSpecificat
     version: 8,
     glyphs: GLYPHS_URL,
     sources: {
-      map: { type: 'vector', url: BASEMAP_TILES_URL },
+      // 直接給 XYZ 而非 tiles.json:少一次請求,而且署名由這裡決定
+      // (tiles.json 內建的 "ExpTech Studio Map" 會蓋掉 source 上的 attribution)
+      map: {
+        type: 'vector',
+        tiles: [BASEMAP_TILE_URL],
+        minzoom: 0,
+        maxzoom: 12,
+        attribution: '<a href="https://exptech.com.tw" target="_blank" rel="noreferrer">ExpTech</a>',
+      },
       [NOTIF_POLY_SOURCE]: { type: 'geojson', data: EMPTY_FEATURE_COLLECTION },
       ...(mode === 'terrain'
         ? {
@@ -251,7 +259,7 @@ export function buildMapStyle(dark: boolean, mode: BaseMapMode): StyleSpecificat
             bounds: [114.28579, 10.32677, 122.3283, 26.43722] as [number, number, number, number],
             minzoom: 0,
             maxzoom: 14,
-            attribution: '© OpenStreetMap contributors © OpenMapTiles',
+            attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OSM</a>',
           },
         }),
     },

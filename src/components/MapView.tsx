@@ -30,6 +30,13 @@ function isNarrowScreen() {
   return typeof window !== 'undefined' && window.innerWidth < 768;
 }
 
+/** 把 MapLibre 的 compact 署名列收成 ⓘ(它預設是展開的,見建圖處的說明) */
+function collapseAttribution(map: maplibregl.Map) {
+  map.getContainer()
+    .querySelector('.maplibregl-ctrl-attrib')
+    ?.classList.remove('maplibregl-compact-show');
+}
+
 function readStoredMode(): BaseMapMode {
   try {
     const saved = window.localStorage.getItem(BASE_MAP_STORAGE_KEY);
@@ -169,15 +176,22 @@ export default function MapView({ notification }: MapViewProps) {
       dragRotate: false,
       pitchWithRotate: false,
       touchZoomRotate: true,
+      // 預設署名列會攤平成一長串(還附掛 MapLibre 自己的連結),改用下面收合的版本
+      attributionControl: false,
     });
     mapRef.current = m;
 
     m.touchZoomRotate.disableRotation();
     m.keyboard.disableRotation();
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    // 署名收在一個 ⓘ 裡(地形「ExpTech」/ GIS「ExpTech | © OSM」)。
+    // MapLibre 的 compact 模式初次填入內容時會同時掛上 maplibregl-compact-show,
+    // 也就是「先展開,拖曳地圖才收起」;這裡在內容就緒後主動收掉。之後 _updateCompact
+    // 只在還沒有 maplibregl-compact 時才會再加 -show,所以收一次就會維持住。
+    m.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: [] }), 'bottom-right');
     m.on('error', () => {});
     // 首次 load:標記已載入並套用目前選取(高亮 + 可見的慢速運鏡)。
-    m.on('load', () => { loadedRef.current = true; applySelection(true); });
+    m.on('load', () => { loadedRef.current = true; collapseAttribution(m); applySelection(true); });
 
     const container = mapContainer.current;
     const ro = typeof ResizeObserver !== 'undefined' && container
@@ -205,7 +219,7 @@ export default function MapView({ notification }: MapViewProps) {
     if (appliedStyleRef.current === key) return;
     appliedStyleRef.current = key;
     m.setStyle(buildMapStyle(dark, baseMapMode));
-    m.once('styledata', () => applySelection(false));
+    m.once('styledata', () => { collapseAttribution(m); applySelection(false); });
   }, [dark, baseMapMode, themeReady, applySelection]);
 
   // 通知 / regionData 變更 → 套用高亮並播放可見的慢速運鏡。
