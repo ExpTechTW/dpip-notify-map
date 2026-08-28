@@ -1,0 +1,10 @@
+# 這些不該進建置情境:node_modules 會蓋掉映像內剛裝好的依賴,其餘只是拖慢傳輸
+node_modules
+.next
+.git
+.gitignore
+.dockerignore
+Dockerfile
+README.md
+npm-debug.log*
+*.tsbuildinfo
