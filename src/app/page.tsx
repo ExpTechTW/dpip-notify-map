@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { TimeFilterComponent, useTimeFilter, TimeFilter, TIME_FILTER_OPTIONS, getDateBounds } from '@/components/TimeFilter';
 import { DatePicker } from '@/components/DatePicker';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
+import { NATIONWIDE_REGION } from '@/utils/regionMatcher';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
@@ -101,7 +102,7 @@ function HomeContent() {
     if (!regionParam) { setRegionFilter(null); setSelectedCity(null); setSelectedDistrict(null); return; }
     const decoded = decodeURIComponent(regionParam);
     setRegionFilter(decoded);
-    if (decoded === '全部(不指定地區的全部用戶廣播通知)') { setSelectedCity(decoded); setSelectedDistrict(null); return; }
+    if (decoded === NATIONWIDE_REGION) { setSelectedCity(decoded); setSelectedDistrict(null); return; }
     if (!regionData) return;
     if (Object.keys(regionData).includes(decoded)) { setSelectedCity(decoded); setSelectedDistrict(null); return; }
     for (const [city, districts] of Object.entries(regionData)) {
@@ -190,7 +191,7 @@ function HomeContent() {
 
   const cityOptions = regionData ? Object.keys(regionData) : [];
   const districtOptions = selectedCity && regionData?.[selectedCity] ? Object.keys(regionData[selectedCity]) : [];
-  const showDistricts = selectedCity && selectedCity !== '全部(不指定地區的全部用戶廣播通知)' && districtOptions.length > 0;
+  const showDistricts = selectedCity && selectedCity !== NATIONWIDE_REGION && districtOptions.length > 0;
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 min-w-0 w-full max-w-[100dvw] flex-col overflow-x-hidden bg-gradient-to-b from-background via-background to-muted/35">
@@ -230,7 +231,7 @@ function HomeContent() {
               <>
                 <SelectWithChevron value={selectedCity || ''} onChange={e => onCityChange(e.target.value)} className="w-full min-w-[6.5rem]">
                   <option value="">縣市</option>
-                  <option value="全部(不指定地區的全部用戶廣播通知)">全國廣播</option>
+                  <option value={NATIONWIDE_REGION}>全國廣播</option>
                   {cityOptions.map(c => <option key={c} value={c}>{c}</option>)}
                 </SelectWithChevron>
                 {showDistricts && (
@@ -278,7 +279,7 @@ function HomeContent() {
               <div className="hidden gap-2 md:flex">
                 <SelectWithChevron value={selectedCity || ''} onChange={e => onCityChange(e.target.value)} className="w-full min-w-[7.5rem]">
                   <option value="">全部縣市</option>
-                  <option value="全部(不指定地區的全部用戶廣播通知)">全國廣播</option>
+                  <option value={NATIONWIDE_REGION}>全國廣播</option>
                   {cityOptions.map(c => <option key={c} value={c}>{c}</option>)}
                 </SelectWithChevron>
                 {showDistricts && (
@@ -358,7 +359,7 @@ function HomeContent() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-0.5 sm:px-1">
             <Card className="flex h-full min-h-0 min-w-0 flex-1 flex-col !gap-0 !py-0 overflow-hidden rounded-2xl border-border/60 shadow-md">
               {mobileTab === 'list'
-                ? <NotificationList compactHeader notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} busy={throttled} />
+                ? <NotificationList notifications={notifications} selectedNotification={selectedNotification} onSelectNotification={handleSelectNotification} busy={throttled} />
                 : <MapView notification={selectedNotification} />
               }
             </Card>

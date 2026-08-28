@@ -8,11 +8,19 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Shield, AlertTriangle, Inbox } from 'lucide-react';
 import { AppleIcon, AndroidIcon } from '@/components/icons/PlatformIcons';
 
+// 共用同一個 Intl formatter(每張卡片各建一個會拖慢長清單)
+const TIME_FORMAT = new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+// 只取內文第一行,不必 split 出整個陣列
+function firstLine(body: string) {
+  const nl = body.indexOf('\n');
+  return nl === -1 ? body : body.slice(0, nl);
+}
+
 interface NotificationListProps {
   notifications: NotificationRecord[];
   selectedNotification: NotificationRecord | null;
   onSelectNotification: (notification: NotificationRecord) => void;
-  compactHeader?: boolean;
   /** 地圖運鏡中、選取被節流(切換過快)→ 顯示輕量載入遮罩,提示稍候。不擋點擊(仍合併成最後選取)。 */
   busy?: boolean;
 }
@@ -21,7 +29,6 @@ export default function NotificationList({
   notifications,
   selectedNotification,
   onSelectNotification,
-  compactHeader = false,
   busy = false,
 }: NotificationListProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -67,9 +74,7 @@ export default function NotificationList({
       </div>
       <div className="flex shrink-0 items-center justify-between border-b border-border/50 bg-muted/20 px-3 py-2">
         <span className="text-xs font-semibold text-muted-foreground">通知列表</span>
-        {(!compactHeader || true) && (
-          <span className="text-xs tabular-nums text-muted-foreground/80">{notifications.length} 筆</span>
-        )}
+        <span className="text-xs tabular-nums text-muted-foreground/80">{notifications.length} 筆</span>
       </div>
 
       <ScrollArea ref={scrollAreaRef} className="h-full min-h-0 min-w-0 flex-1 overflow-hidden [&_[data-slot=scroll-area-viewport]]:min-h-0">
@@ -80,7 +85,7 @@ export default function NotificationList({
               <Card
                 key={`${notification.timestamp}-${index}`}
                 ref={isSelected ? selectedItemRef : null}
-                className={`relative cursor-pointer !gap-0 !py-0 transition-all duration-150 ${
+                className={`notif-card relative cursor-pointer !gap-0 !py-0 transition-all duration-150 ${
                   isSelected
                     ? 'border-primary/45 bg-primary/[0.07] shadow-md ring-2 ring-primary/15'
                     : 'border-border/40 bg-card/50 hover:border-border hover:bg-accent/40 hover:shadow-sm'
@@ -101,9 +106,9 @@ export default function NotificationList({
                           <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px] font-semibold">緊急</Badge>
                         )}
                       </div>
-                      <p className="mb-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{notification.body.split('\n')[0]}</p>
+                      <p className="mb-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{firstLine(notification.body)}</p>
                       <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground/80">
-                        <time className="shrink-0">{new Date(notification.timestamp).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</time>
+                        <time className="shrink-0">{TIME_FORMAT.format(notification.timestamp)}</time>
                         <div className="flex shrink-0 items-center gap-2">
                           {notification.Polygons?.length > 0 && <span>{notification.Polygons.length} 區域</span>}
                           {(() => {

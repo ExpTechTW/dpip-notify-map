@@ -8,25 +8,30 @@ import { Badge } from '@/components/ui/badge';
 import Link from 'next/link';
 import { ArrowLeft, Filter, X, ChevronRight, AlertTriangle, Bell, MapPin, Percent, Send, BarChart3 } from 'lucide-react';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
-import { TimeFilterComponent, useTimeFilter, computeTimeRange } from '@/components/TimeFilter';
+import { TimeFilterComponent, useTimeFilter, computeTimeRange, type TimeFilter } from '@/components/TimeFilter';
 import { useFilteredNotifications } from '@/hooks/useFilteredNotifications';
-import { filterNotificationsByRegionName } from '@/utils/regionMatcher';
+import { NATIONWIDE_REGION, bucketNotificationsByRegions, getRegionCodes } from '@/utils/regionMatcher';
 import { AppleIcon, AndroidIcon } from '@/components/icons/PlatformIcons';
+import type { NotificationRecord } from '@/types/notify';
 
 type ViewMode = 'city' | 'district';
 
+type TypeCounts = Record<string, number>;
+
+interface RegionStat {
+  code: number;
+  name: string;
+  count: number;
+  types: TypeCounts;
+  criticalCount: number;
+  districts?: string[];
+}
+
 interface AnalyticsData {
-  regionStats: ({
-    code: number;
-    name: string;
-    count: number;
-    types: { [type: string]: number };
-    criticalCount: number;
-    districts?: string[];
-  })[];
+  regionStats: RegionStat[];
   totalNotifications: number;
   criticalNotifications: number;
-  typeDistribution: { [type: string]: number };
+  typeDistribution: TypeCounts;
 }
 
 // 動態統計通知類型:標題本身即為類型,只需歸併「標題帶有變動資訊」的兩種通知
@@ -38,6 +43,29 @@ function extractNotificationType(title: string): string {
   // 其他通知標題皆無區域/編號等變動資訊,直接以標題作為類型
   return title;
 }
+
+/** 一批通知的筆數 / 類型分布 / 緊急數 */
+function summarize(notifications: NotificationRecord[]) {
+  const types: TypeCounts = {};
+  let criticalCount = 0;
+  for (const n of notifications) {
+    const type = extractNotificationType(n.title);
+    types[type] = (types[type] ?? 0) + 1;
+    if (n.critical) criticalCount++;
+  }
+  return { count: notifications.length, types, criticalCount };
+}
+
+// 動態統計類型眾多,只顯示前 9 名,其餘合併為「其他」
+const TOP_TYPES = 9;
+function topTypes(types: TypeCounts): [string, number][] {
+  const sorted = Object.entries(types).filter(([, count]) => count > 0).sort(([, a], [, b]) => b - a);
+  if (sorted.length <= TOP_TYPES + 1) return sorted;
+  const rest = sorted.slice(TOP_TYPES).reduce((sum, [, count]) => sum + count, 0);
+  return [...sorted.slice(0, TOP_TYPES), ['其他', rest]];
+}
+
+const byCountDesc = (a: RegionStat, b: RegionStat) => b.count - a.count;
 
 const ACCENT: Record<string, string> = {
   default: 'bg-primary/10 text-primary',
@@ -93,6 +121,31 @@ function PressureTile({ label, icon, pressure }: { label: ReactNode; icon: React
   );
 }
 
+/** 類型分布的長條清單(統計卡與展開的鄉鎮區明細共用) */
+function TypeBars({ types, total, size = 'md' }: { types: TypeCounts; total: number; size?: 'sm' | 'md' }) {
+  const sm = size === 'sm';
+  return (
+    <div className={sm ? 'space-y-2' : 'space-y-3'}>
+      {topTypes(types).map(([type, count]) => {
+        const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+        return (
+          <div key={type} className="space-y-1">
+            <div className={`flex items-center justify-between gap-2 ${sm ? 'text-xs' : 'text-sm'}`}>
+              <span className={sm ? 'truncate' : 'truncate font-medium'}>{type}</span>
+              <span className="shrink-0 tabular-nums text-muted-foreground">
+                {sm ? `${count} · ${percentage}%` : <>{count.toLocaleString()} <span className="text-muted-foreground/60">· {percentage}%</span></>}
+              </span>
+            </div>
+            <div className={`${sm ? 'h-1' : 'h-1.5'} w-full overflow-hidden rounded-full bg-muted`}>
+              <div className={`h-full rounded-full ${sm ? 'bg-primary/60' : 'bg-primary/70 transition-all duration-500'}`} style={{ width: `${Math.max(percentage, 2)}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AnalyticsContent() {
   // 使用統一的時間篩選 hook
   const {
@@ -104,9 +157,9 @@ function AnalyticsContent() {
     handleEndDateChange,
     handleApplyTimeSlot
   } = useTimeFilter();
-  
+
   const [currentRegionFilter, setCurrentRegionFilter] = useState<string | null>(null);
-  
+
   const {
     finalNotifications: filteredNotifications,
     timeFilteredNotifications,
@@ -118,47 +171,29 @@ function AnalyticsContent() {
   const [viewMode, setViewMode] = useState<ViewMode>('city');
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  
-  const router = useRouter();
-  
-  // 建構首頁的 URL，保留時間篩選和數量參數
-  const homeUrl = useMemo(() => {
-    const params = new URLSearchParams();
-    
-    // 保留時間篩選參數
-    if (timeFilter !== 'all') {
-      params.set('timeFilter', timeFilter);
-      if (timeFilter === 'timeSlot' && startDate && endDate) {
-        params.set('startDate', startDate);
-        params.set('endDate', endDate);
-      }
-    }
 
-    return params.toString() ? `/?${params.toString()}` : '/';
+  const router = useRouter();
+
+  // 首頁 URL,保留目前的時間篩選(可再帶上地區)
+  const buildHomeUrl = useMemo(() => {
+    const timeParams = timeParamsOf(timeFilter, startDate, endDate);
+    return (region?: string) => {
+      const params = new URLSearchParams(timeParams);
+      if (region) params.set('region', encodeURIComponent(region));
+      return params.toString() ? `/?${params}` : '/';
+    };
   }, [timeFilter, startDate, endDate]);
+  const homeUrl = buildHomeUrl();
 
   // 緩存基本統計數據
-  const basicStats = useMemo(() => {
-    const typeDistribution: { [type: string]: number } = {};
-    let criticalCount = 0;
-
-    filteredNotifications.forEach(notification => {
-      const notificationType = extractNotificationType(notification.title);
-      typeDistribution[notificationType] = (typeDistribution[notificationType] || 0) + 1;
-      if (notification.critical) {
-        criticalCount++;
-      }
-    });
-
-    return { typeDistribution, criticalCount };
-  }, [filteredNotifications]);
+  const basicStats = useMemo(() => summarize(filteredNotifications), [filteredNotifications]);
 
   // 推播發送量與壓力(時間視窗內、全地區)
   // 理論速率上限:單機/單 IP,各取 95% 當理論。
-  const APNS_RATE = 5;
-  const FCM_RATE = 5;
-  const THEORY_FACTOR = 0.95;
   const deliveryStats = useMemo(() => {
+    const APNS_RATE = 5;
+    const FCM_RATE = 5;
+    const THEORY_FACTOR = 0.95;
     // 不含速報類(走 SNS 廣播、無逐台送達統計):地震速報 / 緊急地震速報 / 震度速報 / 強震監視器
     const EXCLUDED = ['地震速報', '震度速報', '強震監視器'];
     let ios = 0;
@@ -175,237 +210,88 @@ function AnalyticsContent() {
     if (range.start !== undefined) {
       windowSec = ((range.end ?? Date.now()) - range.start) / 1000;
     } else if (timeFilteredNotifications.length > 1) {
-      const ts = timeFilteredNotifications.map(n => n.timestamp);
-      windowSec = (Math.max(...ts) - Math.min(...ts)) / 1000;
+      let min = Infinity, max = -Infinity;
+      for (const n of timeFilteredNotifications) {
+        if (n.timestamp < min) min = n.timestamp;
+        if (n.timestamp > max) max = n.timestamp;
+      }
+      windowSec = (max - min) / 1000;
     }
 
-    const iosMax = windowSec > 0 ? APNS_RATE * THEORY_FACTOR * windowSec : 0;
-    const androidMax = windowSec > 0 ? FCM_RATE * THEORY_FACTOR * windowSec : 0;
+    const iosMax = APNS_RATE * THEORY_FACTOR * windowSec;
+    const androidMax = FCM_RATE * THEORY_FACTOR * windowSec;
     return {
       ios,
       android,
       total: ios + android,
-      windowSec,
-      iosMax,
-      androidMax,
       iosPressure: iosMax > 0 ? ios / iosMax : null,
       androidPressure: androidMax > 0 ? android / androidMax : null,
     };
   }, [timeFilteredNotifications, timeFilter, startDate, endDate]);
 
-  // 緩存縣市統計數據
-  const cityStats = useMemo(() => {
-    if (!regionData || !gridMatrix || currentRegionFilter) {
-      return new Map();
-    }
+  // 縣市統計:一次掃描把通知分到 22 縣市 + 全國廣播(逐縣市各過濾一遍會是 O(縣市 × 通知))
+  const cityStats = useMemo((): RegionStat[] | null => {
+    if (!regionData || !gridMatrix || currentRegionFilter) return null;
 
-    const cityStatsMap = new Map<string, { count: number; types: { [type: string]: number }; criticalCount: number; districts: string[] }>();
-    
-    // 初始化所有縣市
-    Object.keys(regionData).forEach(city => {
-      cityStatsMap.set(city, {
-        count: 0,
-        types: {},
-        criticalCount: 0,
-        districts: Object.keys(regionData[city] || {})
-      });
-    });
-    
-    // 添加全國廣播選項
-    cityStatsMap.set('全部(不指定地區的全部用戶廣播通知)', {
-      count: 0,
-      types: {},
-      criticalCount: 0,
-      districts: []
-    });
-    
-    // 優化：為每個縣市和全國廣播計算通知數量
-    const regionsToProcess = [...Object.keys(regionData), '全部(不指定地區的全部用戶廣播通知)'];
-    
-    regionsToProcess.forEach(region => {
-      // 獲取該地區的通知
-      const regionNotifications = filterNotificationsByRegionName(
-        timeFilteredNotifications, 
-        region, 
-        regionData, 
-        gridMatrix
-      );
-      
-      const regionTypeDistribution: { [type: string]: number } = {};
-      let regionCriticalCount = 0;
-      
-      regionNotifications.forEach(notification => {
-        const notificationType = extractNotificationType(notification.title);
-        regionTypeDistribution[notificationType] = (regionTypeDistribution[notificationType] || 0) + 1;
-        if (notification.critical) {
-          regionCriticalCount++;
-        }
-      });
-      
-      cityStatsMap.set(region, {
-        count: regionNotifications.length,
-        types: regionTypeDistribution,
-        criticalCount: regionCriticalCount,
-        districts: region === '全部(不指定地區的全部用戶廣播通知)' ? [] : Object.keys(regionData[region] || {})
-      });
-    });
+    const names = [...Object.keys(regionData), NATIONWIDE_REGION];
+    const buckets = bucketNotificationsByRegions(timeFilteredNotifications, names, regionData, gridMatrix);
+    return names.map(name => ({
+      code: 0, // 縣市層級不顯示代碼(UI 改顯示鄉鎮區數量)
+      name,
+      ...summarize(buckets.get(name)!),
+      districts: Object.keys(regionData[name] ?? {}),
+    }));
+  }, [regionData, gridMatrix, timeFilteredNotifications, currentRegionFilter]);
 
-    return cityStatsMap;
+  // 篩選到某縣市時:同樣一次掃描算出該縣市下所有鄉鎮區的統計
+  const districtStats = useMemo((): RegionStat[] | null => {
+    if (!regionData || !gridMatrix || !currentRegionFilter) return null;
+    const districts = regionData[currentRegionFilter];
+    if (!districts) return null; // 篩選的是鄉鎮區層級,不需展開
+
+    const entries = Object.entries(districts).map(([d, data]) => ({ name: `${currentRegionFilter}${d}`, code: data.code }));
+    const buckets = bucketNotificationsByRegions(timeFilteredNotifications, entries.map(e => e.name), regionData, gridMatrix);
+    return entries.map(({ name, code }) => ({ code, name, ...summarize(buckets.get(name)!) }));
   }, [regionData, gridMatrix, timeFilteredNotifications, currentRegionFilter]);
 
   const analyticsData = useMemo((): AnalyticsData => {
     if (!regionData || !gridMatrix) {
-      return {
-        regionStats: [],
-        totalNotifications: 0,
-        criticalNotifications: 0,
-        typeDistribution: {}
-      };
+      return { regionStats: [], totalNotifications: 0, criticalNotifications: 0, typeDistribution: {} };
     }
 
-    let regionStats: AnalyticsData['regionStats'];
-    
+    let regionStats: RegionStat[] = [];
     if (!currentRegionFilter) {
-      // 沒有地區篩選時，使用緩存的縣市統計
-      if (viewMode === 'city') {
-        // 轉換為數組並排序
-        regionStats = Array.from(cityStats.entries())
-          .map(([city, stats]) => {
-            // 查找該縣市的地區代碼，如果找不到則使用0
-            let cityCode = 0;
-            if (city !== '全部(不指定地區的全部用戶廣播通知)' && regionData[city]) {
-              // 使用該縣市第一個鄉鎮區的代碼作為縣市代碼的參考
-              const firstDistrict = Object.keys(regionData[city])[0];
-              if (firstDistrict && regionData[city][firstDistrict]) {
-                cityCode = Math.floor(regionData[city][firstDistrict].code / 1000) * 1000;
-              }
-            }
-            
-            return {
-              code: cityCode,
-              name: city,
-              count: stats.count,
-              types: stats.types,
-              criticalCount: stats.criticalCount,
-              districts: stats.districts
-            };
-          })
-          .sort((a, b) => b.count - a.count);
-      } else {
-        regionStats = [];
-      }
-    } else {
-      // 有地區篩選時，使用已篩選的通知進行統計
-      if (viewMode === 'district' && currentRegionFilter) {
-        // 根據篩選的地區，顯示該地區的詳細統計
-        const isCountyLevel = Object.keys(regionData).includes(currentRegionFilter);
-        
-        if (isCountyLevel) {
-          // 縣市級別篩選：統計該縣市下各鄉鎮區的通知數量
-          const districtStats = new Map<string, { count: number; types: { [type: string]: number }; criticalCount: number }>();
-          
-          // 初始化該縣市下的所有鄉鎮區
-          Object.keys(regionData[currentRegionFilter] || {}).forEach(district => {
-            const fullDistrictName = `${currentRegionFilter}${district}`;
-            districtStats.set(fullDistrictName, {
-              count: 0,
-              types: {},
-              criticalCount: 0
-            });
-          });
-          
-          // 為每個鄉鎮區計算通知數量
-          Object.keys(regionData[currentRegionFilter] || {}).forEach(district => {
-            const fullDistrictName = `${currentRegionFilter}${district}`;
-            const districtNotifications = filterNotificationsByRegionName(
-              timeFilteredNotifications,
-              fullDistrictName,
-              regionData,
-              gridMatrix
-            );
-            
-            const districtTypeDistribution: { [type: string]: number } = {};
-            let districtCriticalCount = 0;
-            
-            districtNotifications.forEach(notification => {
-              const notificationType = extractNotificationType(notification.title);
-              districtTypeDistribution[notificationType] = (districtTypeDistribution[notificationType] || 0) + 1;
-              if (notification.critical) {
-                districtCriticalCount++;
-              }
-            });
-            
-            districtStats.set(fullDistrictName, {
-              count: districtNotifications.length,
-              types: districtTypeDistribution,
-              criticalCount: districtCriticalCount
-            });
-          });
-          
-          // 轉換為數組並排序
-          regionStats = Array.from(districtStats.entries())
-            .map(([districtName, stats]) => {
-              // 查找該鄉鎮區的實際地區代碼
-              let districtCode = 0;
-              const cityName = currentRegionFilter;
-              const districtOnly = districtName.replace(cityName, '');
-              
-              if (regionData[cityName] && regionData[cityName][districtOnly]) {
-                districtCode = regionData[cityName][districtOnly].code;
-              }
-              
-              return {
-                code: districtCode,
-                name: districtName,
-                count: stats.count,
-                types: stats.types,
-                criticalCount: stats.criticalCount
-              };
-            })
-            .sort((a, b) => b.count - a.count);
-        } else {
-          // 鄉鎮區級別篩選：顯示該鄉鎮區的統計
-          let singleRegionCode = 0;
-          
-          // 嘗試找到該地區的實際代碼
-          for (const [cityName, cityData] of Object.entries(regionData)) {
-            for (const [districtName, districtData] of Object.entries(cityData)) {
-              const fullName = `${cityName}${districtName}`;
-              if (fullName === currentRegionFilter) {
-                singleRegionCode = districtData.code;
-                break;
-              }
-            }
-            if (singleRegionCode !== 0) break;
-          }
-          
-          regionStats = [{
-            code: singleRegionCode,
-            name: currentRegionFilter,
-            count: filteredNotifications.length,
-            types: basicStats.typeDistribution,
-            criticalCount: basicStats.criticalCount
-          }];
-        }
-      } else {
-        regionStats = [];
-      }
+      if (viewMode === 'city' && cityStats) regionStats = [...cityStats].sort(byCountDesc);
+    } else if (viewMode === 'district') {
+      regionStats = districtStats
+        ? [...districtStats].sort(byCountDesc)
+        // 鄉鎮區層級篩選:只顯示該鄉鎮區自己的統計
+        : [{
+          code: getRegionCodes(regionData, currentRegionFilter).values().next().value ?? 0,
+          name: currentRegionFilter,
+          count: filteredNotifications.length,
+          types: basicStats.types,
+          criticalCount: basicStats.criticalCount,
+        }];
     }
-    
+
     return {
       regionStats,
       totalNotifications: filteredNotifications.length,
       criticalNotifications: basicStats.criticalCount,
-      typeDistribution: basicStats.typeDistribution
+      typeDistribution: basicStats.types
     };
-  }, [regionData, gridMatrix, filteredNotifications, viewMode, currentRegionFilter, cityStats, basicStats, timeFilteredNotifications]);
+  }, [regionData, gridMatrix, filteredNotifications, viewMode, currentRegionFilter, cityStats, districtStats, basicStats]);
+
+  const isNationwideView = viewMode === 'district' && selectedCity === NATIONWIDE_REGION;
+  const cityLabel = selectedCity === NATIONWIDE_REGION ? '全國廣播' : selectedCity;
 
   if (loading) {
     return (
-      <LoadingSpinner 
-        fullScreen 
-        message="載入分析資料中..." 
-        description="正在處理通知統計" 
+      <LoadingSpinner
+        fullScreen
+        message="載入分析資料中..."
+        description="正在處理通知統計"
       />
     );
   }
@@ -446,9 +332,9 @@ function AnalyticsContent() {
               <div className="flex items-center gap-2 mt-1">
                 <Filter className="w-4 h-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">查看: {selectedCity}</span>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     setSelectedCity(null);
                     setSelectedDistrict(null);
@@ -486,10 +372,10 @@ function AnalyticsContent() {
               onClick={() => setViewMode('district')}
               disabled={!selectedCity}
             >
-              {selectedCity === '全部(不指定地區的全部用戶廣播通知)' ? '全國廣播' : '鄉鎮區'}
+              {selectedCity === NATIONWIDE_REGION ? '全國廣播' : '鄉鎮區'}
             </Button>
           </div>
-          
+
           <div className="flex items-center gap-2">
             <TimeFilterComponent
               timeFilter={timeFilter}
@@ -510,7 +396,7 @@ function AnalyticsContent() {
           label="總通知數量"
           value={analyticsData.totalNotifications.toLocaleString()}
           icon={<Bell className="size-4" />}
-          sub={viewMode === 'district' && selectedCity ? (selectedCity === '全部(不指定地區的全部用戶廣播通知)' ? '全國廣播' : selectedCity) : undefined}
+          sub={viewMode === 'district' && selectedCity ? cityLabel : undefined}
         />
         <StatTile
           label="緊急通知"
@@ -567,75 +453,38 @@ function AnalyticsContent() {
           <CardHeader>
             <CardTitle>通知類型分布</CardTitle>
             <CardDescription>
-              {viewMode === 'city' 
-                ? '全部縣市的通知類型統計' 
-                : selectedCity 
-                  ? `${selectedCity === '全部(不指定地區的全部用戶廣播通知)' ? '全國廣播' : selectedCity} 的通知類型統計`
+              {viewMode === 'city'
+                ? '全部縣市的通知類型統計'
+                : selectedCity
+                  ? `${cityLabel} 的通知類型統計`
                   : '不同類型通知的數量統計'
               }
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {(() => {
-                const distributionToShow = viewMode === 'city' 
-                  ? analyticsData.typeDistribution 
-                  : selectedCity === '全部(不指定地區的全部用戶廣播通知)'
-                    ? analyticsData.typeDistribution  // 直接使用全國廣播的類型分布
-                    : analyticsData.regionStats.reduce((acc, region) => {
-                        Object.entries(region.types).forEach(([type, count]) => {
-                          acc[type] = (acc[type] || 0) + count;
-                        });
-                        return acc;
-                      }, {} as { [type: string]: number });
-                // 動態統計類型眾多,只顯示前 9 名,其餘合併為「其他」
-                const sorted = Object.entries(distributionToShow)
-                  .filter(([, count]) => count > 0)
-                  .sort(([, a], [, b]) => b - a);
-                const TOP_N = 9;
-                if (sorted.length <= TOP_N + 1) return sorted;
-                const top = sorted.slice(0, TOP_N);
-                const restCount = sorted.slice(TOP_N).reduce((sum, [, count]) => sum + count, 0);
-                return [...top, ['其他', restCount] as [string, number]];
-              })()
-                .map(([type, count]) => {
-                  const totalForPercent = viewMode === 'city' 
-                    ? analyticsData.totalNotifications 
-                    : analyticsData.totalNotifications; // 使用當前選中地區的總數
-                  
-                  const percentage = totalForPercent > 0 ? Math.round((count / totalForPercent) * 100) : 0;
-                  
-                  if (percentage === 0 && count > 0) {
-                    console.warn(`類型分布顯示異常: "${type}": count=${count}, totalForPercent=${totalForPercent}, percentage=${percentage}%`);
-                  }
-                  
-                  return (
-                    <div key={type} className="space-y-1">
-                      <div className="flex items-center justify-between gap-2 text-sm">
-                        <span className="truncate font-medium">{type}</span>
-                        <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {count.toLocaleString()} <span className="text-muted-foreground/60">· {percentage}%</span>
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                        <div className="h-full rounded-full bg-primary/70 transition-all duration-500" style={{ width: `${Math.max(percentage, 2)}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
+            <TypeBars
+              types={
+                viewMode === 'city' || selectedCity === NATIONWIDE_REGION
+                  ? analyticsData.typeDistribution
+                  : analyticsData.regionStats.reduce<TypeCounts>((acc, region) => {
+                    for (const [type, count] of Object.entries(region.types)) acc[type] = (acc[type] || 0) + count;
+                    return acc;
+                  }, {})
+              }
+              total={analyticsData.totalNotifications}
+            />
           </CardContent>
         </Card>
 
-        {!(viewMode === 'district' && selectedCity === '全部(不指定地區的全部用戶廣播通知)') && (
+        {!isNationwideView && (
           <Card>
             <CardHeader>
               <CardTitle>
                 {viewMode === 'city' ? '縣市' : selectedCity ? `${selectedCity} 鄉鎮區` : '鄉鎮區'} 通知排行
               </CardTitle>
               <CardDescription>
-                {viewMode === 'city' 
-                  ? '各縣市收到的通知數量排名（前10名）' 
+                {viewMode === 'city'
+                  ? '各縣市收到的通知數量排名（前10名）'
                   : '各鄉鎮區收到的通知數量排名（前10名）'
                 }
               </CardDescription>
@@ -670,15 +519,15 @@ function AnalyticsContent() {
         )}
       </div>
 
-      {!(viewMode === 'district' && selectedCity === '全部(不指定地區的全部用戶廣播通知)') && (
+      {!isNationwideView && (
         <Card>
           <CardHeader>
             <CardTitle>
               {viewMode === 'city' ? '縣市' : selectedCity ? `${selectedCity} 鄉鎮區` : '鄉鎮區'} 詳細統計
             </CardTitle>
             <CardDescription>
-              {viewMode === 'city' 
-                ? '各縣市及特殊分類的詳細通知統計（點擊縣市查看轄區詳情，點擊特殊分類篩選並查看地圖）' 
+              {viewMode === 'city'
+                ? '各縣市及特殊分類的詳細通知統計（點擊縣市查看轄區詳情，點擊特殊分類篩選並查看地圖）'
                 : '各鄉鎮區的詳細通知統計（點擊篩選並查看地圖）'
               }
             </CardDescription>
@@ -687,7 +536,7 @@ function AnalyticsContent() {
             <div className="space-y-4">
               {analyticsData.regionStats.map((region, index) => {
               const isSelected = viewMode === 'district' && selectedDistrict === region.name;
-              
+
               return (
               <div key={`${region.name}-detail-${index}`}
                    className={`rounded-xl border p-4 cursor-pointer transition-all group ${
@@ -700,34 +549,19 @@ function AnalyticsContent() {
                        setSelectedDistrict(null);
                        setCurrentRegionFilter(region.name);
                        setViewMode('district');
+                     } else if (selectedDistrict === region.name) {
+                       // 鄉鎮區模式且已選中：跳轉到首頁
+                       router.push(buildHomeUrl(region.name));
                      } else {
-                       // 鄉鎮區模式：選中該鄉鎮區顯示詳細資訊
-                       if (selectedDistrict === region.name) {
-                         // 已選中，跳轉到首頁
-                         const params = new URLSearchParams();
-                         params.set('region', encodeURIComponent(region.name));
-                         
-                         if (timeFilter !== 'all') {
-                           params.set('timeFilter', timeFilter);
-                           if (timeFilter === 'timeSlot' && startDate && endDate) {
-                             params.set('startDate', startDate);
-                             params.set('endDate', endDate);
-                           }
-                         }
-
-                          router.push(`/?${params.toString()}`);
-                       } else {
-                         // 未選中，選中該鄉鎮區
-                         setSelectedDistrict(region.name);
-                       }
+                       setSelectedDistrict(region.name);
                      }
                    }}>
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <h3 className="font-semibold group-hover:text-primary transition-colors">{region.name}</h3>
                     <p className="text-sm text-muted-foreground">
-                      {viewMode === 'city' && 'districts' in region 
-                        ? `包含 ${region.districts?.length || 0} 個鄉鎮區` 
+                      {viewMode === 'city' && 'districts' in region
+                        ? `包含 ${region.districts?.length || 0} 個鄉鎮區`
                         : `地區代碼: ${region.code}`
                       }
                     </p>
@@ -751,24 +585,13 @@ function AnalyticsContent() {
                     <span className="text-xs text-muted-foreground">無類型數據</span>
                   )}
                   <div className="ml-auto flex items-center gap-2">
-                    {isSelected && viewMode === 'district' && (
+                    {isSelected && (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
-                          const params = new URLSearchParams();
-                          params.set('region', encodeURIComponent(region.name));
-                          
-                          if (timeFilter !== 'all') {
-                            params.set('timeFilter', timeFilter);
-                            if (timeFilter === 'timeSlot' && startDate && endDate) {
-                              params.set('startDate', startDate);
-                              params.set('endDate', endDate);
-                            }
-                          }
-
-                          router.push(`/?${params.toString()}`);
+                          router.push(buildHomeUrl(region.name));
                         }}
                       >
                         前往地圖
@@ -781,9 +604,9 @@ function AnalyticsContent() {
                     </div>
                   </div>
                 </div>
-                
+
                 {/* 選中時顯示詳細類型分布 */}
-                {isSelected && viewMode === 'district' && (
+                {isSelected && (
                   <div className="mt-4 pt-4 border-t">
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div className="text-center">
@@ -799,34 +622,9 @@ function AnalyticsContent() {
                         <div className="text-xs text-muted-foreground">緊急比例</div>
                       </div>
                     </div>
-                    
+
                     <h4 className="font-medium mb-3">通知類型分布</h4>
-                    <div className="space-y-2">
-                      {(() => {
-                        const sorted = Object.entries(region.types)
-                          .filter(([, count]) => count > 0)
-                          .sort(([, a], [, b]) => b - a);
-                        const TOP_N = 9;
-                        if (sorted.length <= TOP_N + 1) return sorted;
-                        const top = sorted.slice(0, TOP_N);
-                        const restCount = sorted.slice(TOP_N).reduce((sum, [, count]) => sum + count, 0);
-                        return [...top, ['其他', restCount] as [string, number]];
-                      })()
-                        .map(([type, count]) => {
-                          const percentage = Math.round((count / region.count) * 100);
-                          return (
-                            <div key={type} className="space-y-1">
-                              <div className="flex items-center justify-between gap-2 text-xs">
-                                <span className="truncate">{type}</span>
-                                <span className="shrink-0 tabular-nums text-muted-foreground">{count} · {percentage}%</span>
-                              </div>
-                              <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-                                <div className="h-full rounded-full bg-primary/60" style={{ width: `${Math.max(percentage, 2)}%` }} />
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
+                    <TypeBars types={region.types} total={region.count} size="sm" />
                   </div>
                 )}
               </div>
@@ -836,31 +634,15 @@ function AnalyticsContent() {
           </CardContent>
         </Card>
       )}
-      
-      {viewMode === 'district' && selectedCity === '全部(不指定地區的全部用戶廣播通知)' && (
+
+      {isNationwideView && (
         <Card>
           <CardHeader>
             <CardTitle>前往首頁查看通知</CardTitle>
             <CardDescription>點擊下方按鈕前往首頁查看全國廣播通知的詳細內容</CardDescription>
           </CardHeader>
           <CardContent>
-            <Button 
-              onClick={() => {
-                const params = new URLSearchParams();
-                params.set('region', encodeURIComponent('全部(不指定地區的全部用戶廣播通知)'));
-                
-                if (timeFilter !== 'all') {
-                  params.set('timeFilter', timeFilter);
-                  if (timeFilter === 'timeSlot' && startDate && endDate) {
-                    params.set('startDate', startDate);
-                    params.set('endDate', endDate);
-                  }
-                }
-
-                router.push(`/?${params.toString()}`);
-              }}
-              className="w-full"
-            >
+            <Button onClick={() => router.push(buildHomeUrl(NATIONWIDE_REGION))} className="w-full">
               查看全國廣播通知
             </Button>
           </CardContent>
@@ -871,14 +653,26 @@ function AnalyticsContent() {
   );
 }
 
+/** 時間篩選要帶到另一頁的 query 參數(「全部」不需帶) */
+function timeParamsOf(timeFilter: TimeFilter, startDate: string, endDate: string): URLSearchParams {
+  const params = new URLSearchParams();
+  if (timeFilter === 'all') return params;
+  params.set('timeFilter', timeFilter);
+  if (timeFilter === 'timeSlot' && startDate && endDate) {
+    params.set('startDate', startDate);
+    params.set('endDate', endDate);
+  }
+  return params;
+}
+
 export default function AnalyticsPage() {
   return (
     <Suspense fallback={
-      <LoadingSpinner 
-        fullScreen 
+      <LoadingSpinner
+        fullScreen
         size="lg"
-        message="載入中..." 
-        description="正在獲取分析資料" 
+        message="載入中..."
+        description="正在獲取分析資料"
       />
     }>
       <AnalyticsContent />

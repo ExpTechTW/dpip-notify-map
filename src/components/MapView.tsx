@@ -1,29 +1,42 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { useTheme } from 'next-themes';
+import { Layers, Mountain } from 'lucide-react';
 import { NotificationRecord } from '@/types/notify';
 import { useRegionData, type RegionData } from '@/hooks/useRegionData';
+import { cn } from '@/lib/utils';
+import {
+  BASE_MAP_MODES,
+  DEFAULT_BASE_MAP_MODE,
+  EMPTY_FEATURE_COLLECTION,
+  NOTIF_COLORS,
+  NOTIF_LAYERS,
+  NOTIF_POLY_SOURCE,
+  buildMapStyle,
+  type BaseMapMode,
+} from '@/lib/map-style';
 
 interface MapViewProps {
   notification: NotificationRecord | null;
 }
 
 const TAIWAN_CENTER: [number, number] = [120.9605, 23.6978];
-const CACHE_NAME = 'map-tiles-v1';
-const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
-
-function getInitialZoom() {
-  return typeof window !== 'undefined' && window.innerWidth < 768 ? 6.5 : 7;
-}
-
-function getPadding() {
-  return typeof window !== 'undefined' && window.innerWidth < 768 ? 30 : 60;
-}
+const BASE_MAP_STORAGE_KEY = 'dpip-notify-map:basemap';
 
 function isNarrowScreen() {
   return typeof window !== 'undefined' && window.innerWidth < 768;
+}
+
+function readStoredMode(): BaseMapMode {
+  try {
+    const saved = window.localStorage.getItem(BASE_MAP_STORAGE_KEY);
+    return BASE_MAP_MODES.some(m => m.value === saved) ? (saved as BaseMapMode) : DEFAULT_BASE_MAP_MODE;
+  } catch {
+    return DEFAULT_BASE_MAP_MODE;
+  }
 }
 
 function boundsFromRegionCodes(regionData: RegionData, codes: number[]): maplibregl.LngLatBounds | null {
@@ -48,7 +61,7 @@ function ensureMinLngLatSpan(bounds: maplibregl.LngLatBounds, minDeg = 0.08): ma
 
 // 把通知的 Polygons 轉成 GeoJSON FeatureCollection(無多邊形時回空集合)。
 function buildPolygonGeoJSON(n: NotificationRecord | null): GeoJSON.FeatureCollection {
-  if (!n?.Polygons?.length) return EMPTY_FC;
+  if (!n?.Polygons?.length) return EMPTY_FEATURE_COLLECTION;
   const features: GeoJSON.Feature[] = [];
   n.Polygons.forEach((p, i) => {
     if ('geometry' in p && p.geometry && Array.isArray(p.geometry.coordinates)) {
@@ -79,23 +92,10 @@ function computeBounds(n: NotificationRecord | null, regionData: RegionData | nu
   return null;
 }
 
-// Cache API tiles 快取
-function transformRequest(url: string): { url: string } | undefined {
-  if (!url.includes('basemaps.cartocdn.com') && !url.includes('exptech.dev')) return undefined;
-  if (typeof caches !== 'undefined') {
-    caches.open(CACHE_NAME).then(cache => {
-      cache.match(url).then(cached => {
-        if (!cached) {
-          fetch(url).then(res => { if (res.ok) cache.put(url, res); }).catch(() => {});
-        }
-      });
-    }).catch(() => {});
-  }
-  return { url };
-}
-
 export default function MapView({ notification }: MapViewProps) {
   const { regionData } = useRegionData();
+  const { resolvedTheme } = useTheme();
+  const [baseMapMode, setBaseMapMode] = useState<BaseMapMode>(DEFAULT_BASE_MAP_MODE);
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   // 最新輸入放進 ref,讓 applySelection() 永遠讀到最新值且本身保持穩定(不需重建)。
@@ -105,82 +105,70 @@ export default function MapView({ notification }: MapViewProps) {
   notifRef.current = notification;
   regionRef.current = regionData;
 
-  // 套用目前選取:建立圖層(一次)+ 更新高亮(setFilter/setData/setPaint)+ 慢速運鏡(fitBounds)。
+  // 底圖模式存在 localStorage;mount 後才讀,避免 SSR 與首次 CSR 渲染不一致
+  useEffect(() => { setBaseMapMode(readStoredMode()); }, []);
+
+  // 主題要等 next-themes 解析完才建地圖,否則淺色使用者會先閃一下深色底圖
+  const dark = resolvedTheme !== 'light';
+  const [themeReady, setThemeReady] = useState(false);
+  useEffect(() => { if (resolvedTheme) setThemeReady(true); }, [resolvedTheme]);
+
+  // 建圖當下要用的樣式參數(建圖 effect 只跑一次,故用 ref 取最新值)
+  const styleRef = useRef({ dark, mode: baseMapMode });
+  styleRef.current = { dark, mode: baseMapMode };
+
+  // 套用目前選取:更新高亮(setFilter/setData/setPaint);fit 為 true 時再播放慢速運鏡。
   // 就緒判斷用 loadedRef(首次 load 後恆為 true),不可用 isStyleLoaded():後者在圖磚載入時會
   // 反覆轉回 false,若拿它當守衛,load 之後的更新(例:regionData 晚到才算得出 code 的範圍)
   // 會被誤判未就緒、註冊永不再觸發的 once('load') → 第一個通知永遠不框。
   // 放慢 fitBounds duration,讓遠距切換的「拉遠看全台 → 拉近」看得清相對位置。
-  const applySelection = useCallback(() => {
+  const applySelection = useCallback((fit: boolean) => {
     const m = mapRef.current;
     // 已 load 過(loadedRef)或樣式此刻就緒(涵蓋 HMR 沿用舊 map、load 已錯過的情況)才套用;
     // 兩者皆否 → 尚未就緒,由 load handler 補呼叫。
     if (!m || (!loadedRef.current && !m.isStyleLoaded())) return;
     loadedRef.current = true;
     try {
-      // 通知圖層只建立一次(冪等:已存在就跳過),之後切換通知都只用 setData/setFilter 更新。
-      if (!m.getLayer('notif-codes-fill')) {
-        const NONE: maplibregl.FilterSpecification = ['in', ['get', 'CODE'], ['literal', []]];
-        if (!m.getSource('notif-poly')) m.addSource('notif-poly', { type: 'geojson', data: EMPTY_FC });
-        m.addLayer({ id: 'notif-codes-fill', type: 'fill', source: 'map', 'source-layer': 'town', filter: NONE, paint: { 'fill-color': '#60a5fa', 'fill-opacity': 0.4 } });
-        m.addLayer({ id: 'notif-codes-line', type: 'line', source: 'map', 'source-layer': 'town', filter: NONE, paint: { 'line-color': '#3b82f6', 'line-width': 2.5, 'line-opacity': 0.85 } });
-        m.addLayer({ id: 'notif-poly-fill', type: 'fill', source: 'notif-poly', paint: { 'fill-color': '#3b82f6', 'fill-opacity': 0.2 } });
-        m.addLayer({ id: 'notif-poly-line', type: 'line', source: 'notif-poly', paint: { 'line-color': '#2563eb', 'line-width': 2 } });
-      }
-
       const n = notifRef.current;
       const critical = !!n?.critical;
+      const pick = (c: { normal: string; critical: string }) => (critical ? c.critical : c.normal);
       const codes = n?.codes?.length ? n.codes : [];
-      m.setFilter('notif-codes-fill', ['in', ['get', 'CODE'], ['literal', codes]]);
-      m.setFilter('notif-codes-line', ['in', ['get', 'CODE'], ['literal', codes]]);
-      m.setPaintProperty('notif-codes-fill', 'fill-color', critical ? '#f87171' : '#60a5fa');
-      m.setPaintProperty('notif-codes-line', 'line-color', critical ? '#ef4444' : '#3b82f6');
+      const codeFilter: maplibregl.FilterSpecification = ['in', ['get', 'CODE'], ['literal', codes]];
 
-      (m.getSource('notif-poly') as maplibregl.GeoJSONSource | undefined)?.setData(buildPolygonGeoJSON(n));
-      m.setPaintProperty('notif-poly-fill', 'fill-color', critical ? '#ef4444' : '#3b82f6');
-      m.setPaintProperty('notif-poly-line', 'line-color', critical ? '#dc2626' : '#2563eb');
+      m.setFilter(NOTIF_LAYERS.codesFill, codeFilter);
+      m.setFilter(NOTIF_LAYERS.codesLine, codeFilter);
+      m.setPaintProperty(NOTIF_LAYERS.codesFill, 'fill-color', pick(NOTIF_COLORS.codesFill));
+      m.setPaintProperty(NOTIF_LAYERS.codesLine, 'line-color', pick(NOTIF_COLORS.codesLine));
 
+      (m.getSource(NOTIF_POLY_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(buildPolygonGeoJSON(n));
+      m.setPaintProperty(NOTIF_LAYERS.polyFill, 'fill-color', pick(NOTIF_COLORS.polyFill));
+      m.setPaintProperty(NOTIF_LAYERS.polyLine, 'line-color', pick(NOTIF_COLORS.polyLine));
+
+      if (!fit) return;
       const b = computeBounds(n, regionRef.current);
-      if (b) m.fitBounds(b, { padding: getPadding(), maxZoom: isNarrowScreen() ? 11 : 12, duration: 1100, essential: true });
+      if (b) {
+        const narrow = isNarrowScreen();
+        m.fitBounds(b, { padding: narrow ? 30 : 60, maxZoom: narrow ? 11 : 12, duration: 1100, essential: true });
+      }
     } catch {}
   }, []);
 
-  // 建立地圖(僅一次)+ 載入後一次性建立通知圖層(空狀態)
+  // 建立地圖(僅一次,等主題解析完)
   useEffect(() => {
-    if (!mapContainer.current) return;
+    if (!themeReady || !mapContainer.current || mapRef.current) return;
 
     const m = new maplibregl.Map({
       container: mapContainer.current,
-      style: {
-        version: 8,
-        sources: {
-          'carto-dark': {
-            type: 'raster',
-            tiles: [
-              'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-              'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-              'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-            ],
-            tileSize: 256,
-            attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>',
-          },
-          map: { type: 'vector', url: 'https://lb.exptech.dev/api/v1/map/tiles/tiles.json' },
-        },
-        layers: [
-          { id: 'carto-dark', type: 'raster', source: 'carto-dark' },
-          { id: 'county-fill', type: 'fill', source: 'map', 'source-layer': 'city', paint: { 'fill-color': 'transparent' } },
-          { id: 'county-outline', type: 'line', source: 'map', 'source-layer': 'city', paint: { 'line-color': '#64748b', 'line-width': 1.8, 'line-opacity': 0.6 } },
-          { id: 'town-outline', type: 'line', source: 'map', 'source-layer': 'town', paint: { 'line-color': '#475569', 'line-width': 0.5, 'line-opacity': 0.35 } },
-        ],
-      },
+      style: buildMapStyle(styleRef.current.dark, styleRef.current.mode),
       center: TAIWAN_CENTER,
-      zoom: getInitialZoom(),
+      zoom: isNarrowScreen() ? 6.5 : 7,
       maxBounds: [[115, 20], [127, 27.5]],
       minZoom: 5,
-      maxZoom: 14,
+      // GIS 圖層的建物 z13 起、門牌 z16 起,拉得夠近才看得到細節
+      maxZoom: 17,
       dragRotate: false,
       pitchWithRotate: false,
       touchZoomRotate: true,
-      transformRequest,
     });
     mapRef.current = m;
 
@@ -189,7 +177,7 @@ export default function MapView({ notification }: MapViewProps) {
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     m.on('error', () => {});
     // 首次 load:標記已載入並套用目前選取(高亮 + 可見的慢速運鏡)。
-    m.on('load', () => { loadedRef.current = true; applySelection(); });
+    m.on('load', () => { loadedRef.current = true; applySelection(true); });
 
     const container = mapContainer.current;
     const ro = typeof ResizeObserver !== 'undefined' && container
@@ -204,17 +192,60 @@ export default function MapView({ notification }: MapViewProps) {
       m.remove();
       mapRef.current = null;
     };
-  }, [applySelection]);
+  }, [themeReady, applySelection]);
+
+  // 主題 / 底圖模式改變 → setStyle 差異更新(底圖向量圖磚不會重抓),再補回高亮但不動鏡頭
+  const appliedStyleRef = useRef<string | null>(null);
+  useEffect(() => {
+    const m = mapRef.current;
+    if (!m) return;
+    const key = `${dark ? 'dark' : 'light'}|${baseMapMode}`;
+    // 建圖當下用的就是這組參數,第一次不必重跑
+    if (appliedStyleRef.current === null) { appliedStyleRef.current = key; return; }
+    if (appliedStyleRef.current === key) return;
+    appliedStyleRef.current = key;
+    m.setStyle(buildMapStyle(dark, baseMapMode));
+    m.once('styledata', () => applySelection(false));
+  }, [dark, baseMapMode, themeReady, applySelection]);
 
   // 通知 / regionData 變更 → 套用高亮並播放可見的慢速運鏡。
   // 「給地圖時間、避免過快切換」的節流改由上層(清單選取)負責,此處不遮住地圖。
   useEffect(() => {
-    applySelection();
+    applySelection(true);
   }, [notification, regionData, applySelection]);
+
+  const changeBaseMapMode = useCallback((mode: BaseMapMode) => {
+    setBaseMapMode(mode);
+    try { window.localStorage.setItem(BASE_MAP_STORAGE_KEY, mode); } catch {}
+  }, []);
 
   return (
     <div className="relative h-full overflow-hidden md:rounded-xl">
       <div ref={mapContainer} className="h-full w-full" />
+
+      {/* 底圖切換:地形浮雕 / GIS 街道圖(互斥,GIS 自帶地表) */}
+      <div className="absolute left-2 top-2 z-20 flex gap-0.5 rounded-xl border border-border/60 bg-background/85 p-0.5 shadow-sm backdrop-blur-md">
+        {BASE_MAP_MODES.map(({ value, label }) => {
+          const Icon = value === 'terrain' ? Mountain : Layers;
+          const active = baseMapMode === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => changeBaseMapMode(value)}
+              className={cn(
+                'inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold transition',
+                active ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Icon className="size-3.5" aria-hidden />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+
       {!notification && (
         <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-b from-muted/40 via-background/92 to-background/95 backdrop-blur-[2px]">
           <div className="mx-auto max-w-xs rounded-2xl border border-border/50 bg-card/90 p-8 text-center shadow-lg shadow-black/[0.06]">

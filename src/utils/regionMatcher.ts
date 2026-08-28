@@ -1,156 +1,244 @@
 import { NotificationRecord } from '@/types/notify';
+import type { RegionData } from '@/hooks/useRegionData';
 
-// 快取多邊形到鄉鎮的對應關係
-const polygonToTownsCache = new Map<string, Map<number, number>>();
+/** 「全國廣播」在 UI / URL 中使用的地區名稱 */
+export const NATIONWIDE_REGION = '全部(不指定地區的全部用戶廣播通知)';
+/** 有多邊形但對不上任何已知鄉鎮的通知 */
+export const UNKNOWN_AREA_REGION = '未知區域廣播通知';
 
-// 預計算所有通知的地區匹配結果
-const precomputedRegionMatches = new Map<number, RegionMatchResult>();
+export interface RegionMatchResult {
+  matchedRegions: Set<number>; // 匹配到的地區代碼
+  isNationwide: boolean; // 是否為全國廣播
+  isUnknownArea: boolean; // 是否為未知區域
+}
 
-// 取得多邊形邊界
-function getPolygonBounds(coordinates: number[][][]) {
+// ── 索引(依 regionData / gridMatrix 物件身分快取,資料只載入一次故建一次即可) ──
+
+interface RegionIndex {
+  /** 地區代碼 → 縣市名 */
+  cityOf: Map<number, string>;
+  /** 地區代碼 → `${縣市}${鄉鎮區}` */
+  fullNameOf: Map<number, string>;
+}
+
+const regionIndexCache = new WeakMap<object, RegionIndex>();
+
+function getRegionIndex(regionData: RegionData): RegionIndex {
+  let index = regionIndexCache.get(regionData);
+  if (index) return index;
+
+  index = { cityOf: new Map(), fullNameOf: new Map() };
+  for (const [city, districts] of Object.entries(regionData)) {
+    for (const [district, data] of Object.entries(districts)) {
+      index.cityOf.set(data.code, city);
+      index.fullNameOf.set(data.code, `${city}${district}`);
+    }
+  }
+  regionIndexCache.set(regionData, index);
+  return index;
+}
+
+/** 代碼是否對應到已知鄉鎮區 */
+export function isKnownRegionCode(regionData: RegionData, code: number): boolean {
+  return getRegionIndex(regionData).cityOf.has(code);
+}
+
+/** 地區名稱(縣市或 `${縣市}${鄉鎮區}`)涵蓋的所有代碼 */
+export function getRegionCodes(regionData: RegionData, targetRegion: string): Set<number> {
+  const { cityOf, fullNameOf } = getRegionIndex(regionData);
+  const codes = new Set<number>();
+  for (const [code, city] of cityOf) {
+    if (city === targetRegion || fullNameOf.get(code) === targetRegion) codes.add(code);
+  }
+  return codes;
+}
+
+/** 網格點攤平成數值陣列,省去每次比對時的字串切割與 parseFloat */
+interface GridIndex {
+  lon: Float64Array;
+  lat: Float64Array;
+  code: Int32Array;
+}
+
+const gridIndexCache = new WeakMap<Map<string, number>, GridIndex>();
+
+function getGridIndex(gridMatrix: Map<string, number>): GridIndex {
+  let index = gridIndexCache.get(gridMatrix);
+  if (index) return index;
+
+  const size = gridMatrix.size;
+  index = { lon: new Float64Array(size), lat: new Float64Array(size), code: new Int32Array(size) };
+  let i = 0;
+  for (const [key, code] of gridMatrix) {
+    const comma = key.indexOf(',');
+    index.lon[i] = Number(key.slice(0, comma));
+    index.lat[i] = Number(key.slice(comma + 1));
+    index.code[i] = code;
+    i++;
+  }
+  gridIndexCache.set(gridMatrix, index);
+  return index;
+}
+
+// ── 多邊形 → 鄉鎮 ──
+
+interface PolygonExtent {
+  minLon: number;
+  maxLon: number;
+  minLat: number;
+  maxLat: number;
+  centerLon: number;
+  centerLat: number;
+}
+
+/** 一次掃描取得邊界與中心點(兩者原本各掃一遍) */
+function getPolygonExtent(coordinates: number[][][]): PolygonExtent {
   let minLon = Infinity, maxLon = -Infinity;
   let minLat = Infinity, maxLat = -Infinity;
-  
+  let totalLon = 0, totalLat = 0, count = 0;
+
   for (const ring of coordinates) {
     for (const [lon, lat] of ring) {
       minLon = Math.min(minLon, lon);
       maxLon = Math.max(maxLon, lon);
       minLat = Math.min(minLat, lat);
       maxLat = Math.max(maxLat, lat);
-    }
-  }
-  
-  return { minLon, maxLon, minLat, maxLat };
-}
-
-// 檢查點是否在多邊形內
-function isPointInPolygon(point: [number, number], polygon: number[][][]): boolean {
-  const [x, y] = point;
-  
-  for (const ring of polygon) {
-    let inside = false;
-    let j = ring.length - 1;
-    
-    for (let i = 0; i < ring.length; i++) {
-      const [xi, yi] = ring[i];
-      const [xj, yj] = ring[j];
-      
-      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
-        inside = !inside;
-      }
-      j = i;
-    }
-    
-    if (inside) return true;
-  }
-  
-  return false;
-}
-
-// 生成多邊形的唯一標識符
-function getPolygonHash(polygonCoords: number[][][]): string {
-  // 使用多邊形的邊界和中心點來生成雜湊
-  const bounds = getPolygonBounds(polygonCoords);
-  const center = getPolygonCenter(polygonCoords);
-  return `${bounds.minLon.toFixed(3)},${bounds.minLat.toFixed(3)},${bounds.maxLon.toFixed(3)},${bounds.maxLat.toFixed(3)},${center[0].toFixed(3)},${center[1].toFixed(3)}`;
-}
-
-// 使用網格矩陣將多邊形分配到鄉鎮（帶快取）
-function assignPolygonToTownsByGrid(
-  polygonCoords: number[][][], 
-  gridMatrix: Map<string, number>
-): Map<number, number> {
-  // 生成多邊形的唯一標識符
-  const polygonHash = getPolygonHash(polygonCoords);
-  
-  // 檢查快取
-  if (polygonToTownsCache.has(polygonHash)) {
-    return polygonToTownsCache.get(polygonHash)!;
-  }
-  
-  const townCounts = new Map<number, number>();
-  
-  // 取得polygon的邊界
-  const bounds = getPolygonBounds(polygonCoords);
-  const gridStep = 0.05; // 與生成時保持一致
-  
-  // 優化：減少網格點檢查的粒度以提高性能
-  const optimizedGridStep = Math.max(gridStep * 2, (bounds.maxLon - bounds.minLon) / 25); // 進一步減少網格密度
-  
-  // 檢查polygon邊界內的網格點
-  for (let lon = bounds.minLon; lon <= bounds.maxLon; lon += optimizedGridStep) {
-    for (let lat = bounds.minLat; lat <= bounds.maxLat; lat += optimizedGridStep) {
-      const key = `${lon.toFixed(3)},${lat.toFixed(3)}`;
-      const townCode = gridMatrix.get(key);
-      
-      if (townCode && isPointInPolygon([lon, lat], polygonCoords)) {
-        townCounts.set(townCode, (townCounts.get(townCode) || 0) + 1);
-      }
-    }
-  }
-  
-  // 快取結果
-  polygonToTownsCache.set(polygonHash, townCounts);
-  
-  return townCounts;
-}
-
-// 取得多邊形中心點
-function getPolygonCenter(coordinates: number[][][]): [number, number] {
-  let totalLon = 0;
-  let totalLat = 0;
-  let count = 0;
-  
-  for (const ring of coordinates) {
-    for (const [lon, lat] of ring) {
       totalLon += lon;
       totalLat += lat;
       count++;
     }
   }
-  
-  return [totalLon / count, totalLat / count];
+
+  return { minLon, maxLon, minLat, maxLat, centerLon: totalLon / count, centerLat: totalLat / count };
 }
 
-// 找最近的網格點
-function findNearestGridPoint(
-  point: [number, number], 
-  gridMatrix: Map<string, number>
-): number | null {
-  let minDistance = Infinity;
-  let nearestTownCode: number | null = null;
-  
-  for (const [key, townCode] of gridMatrix.entries()) {
-    const [lonStr, latStr] = key.split(',');
-    const lon = parseFloat(lonStr);
-    const lat = parseFloat(latStr);
-    
-    const distance = Math.sqrt(
-      Math.pow(lon - point[0], 2) + 
-      Math.pow(lat - point[1], 2)
-    );
-    
-    if (distance < minDistance) {
-      minDistance = distance;
-      nearestTownCode = townCode;
+// 檢查點是否在多邊形內(任一 ring 命中即算內部)
+function isPointInPolygon(x: number, y: number, polygon: number[][][]): boolean {
+  for (const ring of polygon) {
+    let inside = false;
+    let j = ring.length - 1;
+
+    for (let i = 0; i < ring.length; i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+
+      if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+      j = i;
+    }
+
+    if (inside) return true;
+  }
+
+  return false;
+}
+
+// 找最近的網格點(比距離平方即可,不必開根號)
+function findNearestGridCode(gridMatrix: Map<string, number>, lon: number, lat: number): number | null {
+  const { lon: gLon, lat: gLat, code } = getGridIndex(gridMatrix);
+  let minDistanceSq = Infinity;
+  let nearest: number | null = null;
+
+  for (let i = 0; i < code.length; i++) {
+    const dx = gLon[i] - lon;
+    const dy = gLat[i] - lat;
+    const distanceSq = dx * dx + dy * dy;
+    if (distanceSq < minDistanceSq) {
+      minDistanceSq = distanceSq;
+      nearest = code[i];
     }
   }
-  
-  return nearestTownCode;
+
+  return nearest;
 }
 
-export interface RegionMatchResult {
-  matchedRegions: Set<number>; // 匹配到的地區代碼
-  isNationwide: boolean; // 是否為全國廣播
-  isUnknownArea: boolean; // 是否為未知區域
-  isOtherArea: boolean; // 是否為其他地區
+// 每個多邊形只會得到一個鄉鎮代碼,結果依「邊界+中心點」快取(同一形狀重複出現時直接命中)
+const polygonCodeCache = new WeakMap<Map<string, number>, Map<string, number | null>>();
+
+/** 用網格矩陣把多邊形歸到單一鄉鎮:取涵蓋網格點最多者,完全沒涵蓋則退回離中心最近的網格點 */
+function polygonToTownCode(coordinates: number[][][], gridMatrix: Map<string, number>): number | null {
+  const e = getPolygonExtent(coordinates);
+  const hash = `${e.minLon.toFixed(3)},${e.minLat.toFixed(3)},${e.maxLon.toFixed(3)},${e.maxLat.toFixed(3)},${e.centerLon.toFixed(3)},${e.centerLat.toFixed(3)}`;
+
+  let cache = polygonCodeCache.get(gridMatrix);
+  if (!cache) polygonCodeCache.set(gridMatrix, (cache = new Map()));
+  const cached = cache.get(hash);
+  if (cached !== undefined) return cached;
+
+  // 掃描粒度:網格本身為 0.05,這裡放寬到 0.1 或「經度跨度 / 25」(取大者)以壓低取樣點數
+  const step = Math.max(0.1, (e.maxLon - e.minLon) / 25);
+  const townCounts = new Map<number, number>();
+
+  for (let lon = e.minLon; lon <= e.maxLon; lon += step) {
+    for (let lat = e.minLat; lat <= e.maxLat; lat += step) {
+      const townCode = gridMatrix.get(`${lon.toFixed(3)},${lat.toFixed(3)}`);
+      if (townCode && isPointInPolygon(lon, lat, coordinates)) {
+        townCounts.set(townCode, (townCounts.get(townCode) ?? 0) + 1);
+      }
+    }
+  }
+
+  let result: number | null = null;
+  if (townCounts.size > 0) {
+    let maxCount = 0;
+    for (const [townCode, count] of townCounts) {
+      if (count > maxCount) {
+        maxCount = count;
+        result = townCode;
+      }
+    }
+  } else {
+    result = findNearestGridCode(gridMatrix, e.centerLon, e.centerLat);
+  }
+
+  cache.set(hash, result);
+  return result;
 }
+
+// ── 通知 → 地區 ──
+
+function polygonCoordinates(polygon: NotificationRecord['Polygons'][number]): number[][][] {
+  return 'coordinates' in polygon ? polygon.coordinates : polygon.geometry.coordinates;
+}
+
+function computeNotificationRegions(
+  notification: NotificationRecord,
+  regionData: RegionData,
+  gridMatrix: Map<string, number>
+): RegionMatchResult {
+  const { cityOf } = getRegionIndex(regionData);
+  const matchedRegions = new Set<number>();
+
+  for (const code of notification.codes) {
+    if (cityOf.has(code)) matchedRegions.add(code);
+  }
+
+  for (const polygon of notification.Polygons) {
+    const townCode = polygonToTownCode(polygonCoordinates(polygon), gridMatrix);
+    if (townCode) matchedRegions.add(townCode);
+  }
+
+  // 完全沒匹配到時:代表所有代碼都無效。有代碼(全無效)或連範圍都沒指定 → 視為全國廣播;
+  // 只有多邊形卻對不上任何鄉鎮 → 未知區域。
+  const unmatched = matchedRegions.size === 0;
+  return {
+    matchedRegions,
+    isNationwide: unmatched && (notification.codes.length > 0 || notification.Polygons.length === 0),
+    isUnknownArea: unmatched && notification.codes.length === 0 && notification.Polygons.length > 0,
+  };
+}
+
+// 預計算結果(以 timestamp 為鍵,只放有多邊形的通知)
+const precomputedRegionMatches = new Map<number, RegionMatchResult>();
+// 其餘通知依物件身分快取,避免同一批資料被反覆重算
+const lazyMatchCache = new WeakMap<object, WeakMap<NotificationRecord, RegionMatchResult>>();
 
 export function precomputeAllRegionMatches(
   notifications: NotificationRecord[],
-  regionData: Record<string, Record<string, { code: number; lat: number; lon: number; site: number; area: string }>>,
+  regionData: RegionData,
   gridMatrix: Map<string, number>
-): Promise<void> {
+): void {
   precomputedRegionMatches.clear();
   for (const notification of notifications) {
     if (notification.Polygons.length === 0) continue;
@@ -159,267 +247,106 @@ export function precomputeAllRegionMatches(
       computeNotificationRegions(notification, regionData, gridMatrix)
     );
   }
-  return Promise.resolve();
-}
-
-// 內部計算函數（不使用快取）
-function computeNotificationRegions(
-  notification: NotificationRecord,
-  regionData: Record<string, Record<string, { code: number; lat: number; lon: number; site: number; area: string }>>,
-  gridMatrix: Map<string, number>
-): RegionMatchResult {
-  const result: RegionMatchResult = {
-    matchedRegions: new Set<number>(),
-    isNationwide: false,
-    isUnknownArea: false,
-    isOtherArea: false
-  };
-
-  // 1. 處理直接指定的地區代碼
-  notification.codes.forEach(code => {
-    // 檢查是否為有效的地區代碼
-    let isValidCode = false;
-    for (const [, districts] of Object.entries(regionData)) {
-      for (const [, data] of Object.entries(districts)) {
-        if (data.code === code) {
-          isValidCode = true;
-          result.matchedRegions.add(code);
-          break;
-        }
-      }
-      if (isValidCode) break;
-    }
-  });
-
-  // 2. 處理 Polygon 類型 - 使用網格矩陣系統
-  notification.Polygons.forEach((notificationPolygon) => {
-    const notificationCoordinates = 'coordinates' in notificationPolygon 
-      ? notificationPolygon.coordinates 
-      : notificationPolygon.geometry.coordinates;
-        
-    // 使用網格矩陣分配polygon到鄉鎮
-    const townCounts = assignPolygonToTownsByGrid(notificationCoordinates, gridMatrix);
-        
-    if (townCounts.size > 0) {
-      // 找出包含最多網格點的鄉鎮
-      let maxCount = 0;
-      let bestTownCode: number | null = null;
-      let bestTownName = '';
-      
-      for (const [townCode, count] of townCounts.entries()) {
-        if (count > maxCount) {
-          maxCount = count;
-          bestTownCode = townCode;
-          // 找到地區名稱
-          for (const [city, districts] of Object.entries(regionData)) {
-            for (const [district, data] of Object.entries(districts)) {
-              if (data.code === townCode) {
-                bestTownName = `${city}${district}`;
-                break;
-              }
-            }
-            if (bestTownName) break;
-          }
-        }
-      }
-      
-      if (bestTownCode) {
-        result.matchedRegions.add(bestTownCode);
-      }
-    } else {
-      // 備用方案：找最近的網格點
-      const polygonCenter = getPolygonCenter(notificationCoordinates);
-      const nearestCode = findNearestGridPoint(polygonCenter, gridMatrix);
-      if (nearestCode) {
-        result.matchedRegions.add(nearestCode);
-        if (false) { // debug removed
-          let nearestName = '';
-          for (const [city, districts] of Object.entries(regionData)) {
-            for (const [district, data] of Object.entries(districts)) {
-              if (data.code === nearestCode) {
-                nearestName = `${city}${district}`;
-                break;
-              }
-            }
-            if (nearestName) break;
-          }
-        }
-      }
-    }
-  });
-
-  // 3. 判斷特殊類型
-  if (result.matchedRegions.size === 0) {
-    // 檢查是否為全國廣播
-    if (notification.codes.length === 0 && notification.Polygons.length === 0) {
-      result.isNationwide = true;
-    }
-    // 檢查是否為無數字區域代碼的通知
-    else if (notification.codes.length > 0 && notification.codes.every(code => {
-      // 檢查是否為無效代碼
-      let isInvalid = true;
-      for (const [, districts] of Object.entries(regionData)) {
-        for (const [, data] of Object.entries(districts)) {
-          if (data.code === code) {
-            isInvalid = false;
-            break;
-          }
-        }
-        if (!isInvalid) break;
-      }
-      return isInvalid;
-    })) {
-      result.isNationwide = true;
-    }
-    // 有polygon但無法匹配到已知地區
-    else if (notification.Polygons.length > 0) {
-      result.isUnknownArea = true;
-    }
-    // 有代碼但不匹配任何已知地區
-    else {
-      result.isOtherArea = true;
-    }
-  } 
-  
-  return result;
 }
 
 export function matchNotificationToRegions(
   notification: NotificationRecord,
-  regionData: Record<string, Record<string, { code: number; lat: number; lon: number; site: number; area: string }>>,
+  regionData: RegionData,
   gridMatrix: Map<string, number>
 ): RegionMatchResult {
-  // 檢查預計算結果（只有多邊形通知才有預計算）
-  if (precomputedRegionMatches.has(notification.timestamp)) {
-    return precomputedRegionMatches.get(notification.timestamp)!;
+  const precomputed = precomputedRegionMatches.get(notification.timestamp);
+  if (precomputed) return precomputed;
+
+  let cache = lazyMatchCache.get(regionData);
+  if (!cache) lazyMatchCache.set(regionData, (cache = new WeakMap()));
+  let result = cache.get(notification);
+  if (!result) {
+    result = computeNotificationRegions(notification, regionData, gridMatrix);
+    cache.set(notification, result);
   }
-  
-  // 快速處理簡單情況
-  if (notification.codes.length === 0 && notification.Polygons.length === 0) {
-    return {
-      matchedRegions: new Set<number>(),
-      isNationwide: true,
-      isUnknownArea: false,
-      isOtherArea: false
-    };
+  return result;
+}
+
+function matchesRegionName(
+  notification: NotificationRecord,
+  targetRegion: string,
+  targetCodes: Set<number>,
+  regionData: RegionData,
+  gridMatrix: Map<string, number>
+): boolean {
+  if (notification.title.includes(targetRegion)) return true;
+  for (const code of matchNotificationToRegions(notification, regionData, gridMatrix).matchedRegions) {
+    if (targetCodes.has(code)) return true;
   }
-  
-  if (notification.codes.length > 0 && notification.Polygons.length === 0) {
-    // 只有代碼的簡單情況，快速處理
-    const result: RegionMatchResult = {
-      matchedRegions: new Set<number>(),
-      isNationwide: false,
-      isUnknownArea: false,
-      isOtherArea: false
-    };
-    
-    // 檢查代碼有效性
-    let hasValidCode = false;
-    notification.codes.forEach(code => {
-      for (const [, districts] of Object.entries(regionData)) {
-        for (const [, data] of Object.entries(districts)) {
-          if (data.code === code) {
-            result.matchedRegions.add(code);
-            hasValidCode = true;
-            break;
-          }
-        }
-        if (hasValidCode) break;
-      }
-    });
-    
-    if (!hasValidCode) {
-      result.isNationwide = true;
-    }
-    
-    return result;
-  }
-  
-  // 複雜情況（有多邊形）即時計算
-  return computeNotificationRegions(notification, regionData, gridMatrix);
+  return false;
 }
 
 export function filterNotificationsByRegionName(
   notifications: NotificationRecord[],
   targetRegion: string,
-  regionData: Record<string, Record<string, { code: number; lat: number; lon: number; site: number; area: string }>>,
+  regionData: RegionData,
   gridMatrix: Map<string, number>
 ): NotificationRecord[] {
-  
-  if (targetRegion === '全部(不指定地區的全部用戶廣播通知)') {
-    const result = notifications.filter(notification => {
-      const matchResult = matchNotificationToRegions(notification, regionData, gridMatrix);
-      return matchResult.isNationwide;
-    });
-    return result;
+  if (targetRegion === NATIONWIDE_REGION) {
+    return notifications.filter(n => matchNotificationToRegions(n, regionData, gridMatrix).isNationwide);
   }
 
-  if (targetRegion === '其他地區') {
-    const result = notifications.filter(notification => {
-      const matchResult = matchNotificationToRegions(notification, regionData, gridMatrix);
-      return matchResult.isOtherArea;
-    });
-    return result;
+  if (targetRegion === UNKNOWN_AREA_REGION) {
+    return notifications.filter(n => matchNotificationToRegions(n, regionData, gridMatrix).isUnknownArea);
   }
 
-  if (targetRegion === '未知區域廣播通知') {
-    const result = notifications.filter(notification => {
-      const matchResult = matchNotificationToRegions(notification, regionData, gridMatrix);
-      return matchResult.isUnknownArea;
-    });
-    return result;
-  }
+  const targetCodes = getRegionCodes(regionData, targetRegion);
+  if (targetCodes.size === 0) return [];
 
-  const targetCodes: number[] = [];
-  for (const [city, districts] of Object.entries(regionData)) {
-    for (const [district, data] of Object.entries(districts)) {
-      const fullName = `${city}${district}`;
-      if (fullName === targetRegion || city === targetRegion) {
-        targetCodes.push(data.code);
-      }
+  return notifications.filter(n => matchesRegionName(n, targetRegion, targetCodes, regionData, gridMatrix));
+}
+
+/**
+ * 一次掃描把通知分到多個地區名稱底下。
+ * 等同於對每個名稱各呼叫一次 filterNotificationsByRegionName,但只掃通知一遍
+ * (統計頁要算 22 縣市 / 數十鄉鎮區,逐一過濾會是 O(地區數 × 通知數))。
+ */
+export function bucketNotificationsByRegions(
+  notifications: NotificationRecord[],
+  regionNames: string[],
+  regionData: RegionData,
+  gridMatrix: Map<string, number>
+): Map<string, NotificationRecord[]> {
+  const buckets = new Map<string, NotificationRecord[]>(regionNames.map(name => [name, []]));
+  const namesByCode = new Map<number, string[]>();
+  const plainNames: string[] = [];
+
+  for (const name of regionNames) {
+    if (name === NATIONWIDE_REGION || name === UNKNOWN_AREA_REGION) continue;
+    plainNames.push(name);
+    for (const code of getRegionCodes(regionData, name)) {
+      const names = namesByCode.get(code);
+      if (names) names.push(name);
+      else namesByCode.set(code, [name]);
     }
   }
 
-  if (targetCodes.length === 0) {
-    return [];
+  const nationwide = buckets.get(NATIONWIDE_REGION);
+  const unknownArea = buckets.get(UNKNOWN_AREA_REGION);
+
+  for (const notification of notifications) {
+    const match = matchNotificationToRegions(notification, regionData, gridMatrix);
+    if (nationwide && match.isNationwide) nationwide.push(notification);
+    if (unknownArea && match.isUnknownArea) unknownArea.push(notification);
+
+    const hits = new Set<string>();
+    for (const code of match.matchedRegions) {
+      const names = namesByCode.get(code);
+      if (names) for (const name of names) hits.add(name);
+    }
+    for (const name of plainNames) {
+      if (notification.title.includes(name)) hits.add(name);
+    }
+    // 依 regionNames 的順序寫入,讓每個 bucket 內仍維持原本的通知順序
+    for (const name of plainNames) {
+      if (hits.has(name)) buckets.get(name)!.push(notification);
+    }
   }
 
-  // 篩選符合的通知（使用預計算結果，性能極佳）
-  const matchedNotifications: NotificationRecord[] = [];
-  
-  notifications.forEach((notification) => {
-    let matched = false;
-    let matchedByTitle = false;
-    let matchedByCode = false;
-    let matchedByPolygon = false;
-    
-    // 1. 檢查標題是否包含地區名稱
-    if (notification.title.includes(targetRegion)) {
-      matchedByTitle = true;
-    }
-
-    // 2. 使用預計算的匹配結果（如果可用）
-    const matchResult = matchNotificationToRegions(notification, regionData, gridMatrix);
-    
-    // 檢查是否有任何目標地區代碼被匹配到
-    for (const targetCode of targetCodes) {
-      if (matchResult.matchedRegions.has(targetCode)) {
-        if (notification.codes.includes(targetCode)) {
-          matchedByCode = true;
-        } else {
-          matchedByPolygon = true;
-        }
-        break;
-      }
-    }
-    
-    // 決定是否匹配和匹配原因
-    matched = matchedByTitle || matchedByCode || matchedByPolygon;
-
-    if (matched) {
-      matchedNotifications.push(notification);
-    }
-  });
-    
-  return matchedNotifications;
+  return buckets;
 }

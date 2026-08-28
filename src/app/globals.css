@@ -81,6 +81,14 @@
     }
   }
 
+  /* 通知清單可能上萬筆:讓瀏覽器跳過捲動視窗外項目的排版與繪製(先給固定高度墊檔,
+     支援 auto 關鍵字的瀏覽器會改用實際量到的高度) */
+  .notif-card {
+    content-visibility: auto;
+    contain-intrinsic-size: 92px;
+    contain-intrinsic-size: auto 92px;
+  }
+
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;

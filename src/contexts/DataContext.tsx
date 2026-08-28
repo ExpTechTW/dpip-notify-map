@@ -16,8 +16,6 @@ interface DataContextType {
   gridMatrix: Map<string, number> | null;
   regionDataLoading: boolean;
   regionDataError: string | null;
-  precomputeCompleted: boolean;
-  precomputeLoading: boolean;
   isDataReady: boolean;
   refetchNotifications: () => void;
 }
@@ -33,8 +31,8 @@ export function useDataContext() {
 }
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [precomputeCompleted, setPrecomputeCompleted] = useState(false);
-  const [precomputeLoading, setPrecomputeLoading] = useState(false);
+  // 已完成預計算的那一份 notifications(用陣列身分判斷,換資料就自動失效)
+  const [precomputedFor, setPrecomputedFor] = useState<NotificationRecord[] | null>(null);
 
   const { timeFilter, appliedStartDate, appliedEndDate } = useTimeFilter();
 
@@ -44,7 +42,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     error: notificationsError,
     refetch: refetchNotifications
   } = useNotifications(timeFilter, appliedStartDate, appliedEndDate);
-  
+
   const {
     regionData,
     gridMatrix,
@@ -53,29 +51,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   } = useRegionData();
 
   useEffect(() => {
-    if (
-      notifications.length > 0 &&
-      regionData &&
-      gridMatrix &&
-      !precomputeCompleted &&
-      !precomputeLoading
-    ) {
-      setPrecomputeLoading(true);
-      precomputeAllRegionMatches(notifications, regionData, gridMatrix)
-        .then(() => {
-          setPrecomputeCompleted(true);
-          setPrecomputeLoading(false);
-        })
-        .catch((error) => {
-          console.error('預計算失敗:', error);
-          setPrecomputeLoading(false);
-        });
-    }
-  }, [notifications, regionData, gridMatrix, precomputeCompleted, precomputeLoading]);
-
-  useEffect(() => {
-    setPrecomputeCompleted(false);
-  }, [notifications]);
+    if (!regionData || !gridMatrix || notifications.length === 0) return;
+    precomputeAllRegionMatches(notifications, regionData, gridMatrix);
+    setPrecomputedFor(notifications);
+  }, [notifications, regionData, gridMatrix]);
 
   const isDataReady =
     !notificationsLoading &&
@@ -83,8 +62,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     regionData !== null &&
     gridMatrix !== null &&
     // 0 筆通知也算「就緒」(顯示空狀態,不需區域預計算);有資料才等預計算完成
-    (notifications.length === 0 || (!precomputeLoading && precomputeCompleted));
-  
+    (notifications.length === 0 || precomputedFor === notifications);
+
   const value: DataContextType = {
     notifications,
     notificationsLoading,
@@ -93,12 +72,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     gridMatrix,
     regionDataLoading,
     regionDataError,
-    precomputeCompleted,
-    precomputeLoading,
     isDataReady,
     refetchNotifications
   };
-  
+
   return (
     <DataContext.Provider value={value}>
       {children}
